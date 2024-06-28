@@ -5549,12 +5549,13 @@ function GetObjectVertices(object)
 	local Model = ENTITY.GET_ENTITY_MODEL(object)
     local min, max = v3.new(), v3.new()
 	MISC.GET_MODEL_DIMENSIONS(Model, min, max)
-    local rotation = ENTITY.GET_ENTITY_ROTATION(object)
+    local rotation = ENTITY.GET_ENTITY_ROTATION(object, 0)
     min.x = min.x * 0.990
     min.y = min.y * 0.990
     max.x = max.x * 0.990
     max.y = max.y * 0.990
 	local vertices = {}
+	Print("x= "..rotation.x .. " y= "..rotation.y)
     -- Ajustar os vértices com base na rotação
     if math.abs(rotation.x) < 45 and math.abs(rotation.y) < 45 then
         -- Superfície superior está virada para cima
@@ -5695,11 +5696,13 @@ function AddNecessaryVertices(verticesList)
                     local v2_2 = vertices2[(k % #vertices2) + 1]
 
                     local closestPoint = GetClosestPointOnEdge(v2_1, v2_2, v1)
-                    if vector_length(vector_sub(closestPoint, v1)) < 2.0 then
-                        table.insert(newVertices, closestPoint)
-                        table.insert(vertices2, k + 1, closestPoint) -- Inserir no local correto
-                        break
-                    end
+					if vector_length(vector_sub(closestPoint, v2_2)) > 2.0 and vector_length(vector_sub(closestPoint, v2_1)) > 2.0 then
+						if vector_length(vector_sub(closestPoint, v1)) < 2.0 then
+							table.insert(newVertices, closestPoint)
+							table.insert(vertices2, k + 1, closestPoint) -- Inserir no local correto
+							break
+						end
+					end
                 end
             end
         end
@@ -5752,6 +5755,45 @@ menu.toggle(TestMenu, "Model Test", {}, "", function(Toggle)
 	end
 end)
 
+function CreateBridgePolygons(verticesList, threshold)
+    local bridgePolygons = {}
+
+    for i = 1, #verticesList do
+        for j = i + 1, #verticesList do
+            local vertices1 = verticesList[i]
+            local vertices2 = verticesList[j]
+
+            local closestPairs = {}
+
+            -- Encontrar os pares de vértices mais próximos
+            for _, v1 in ipairs(vertices1) do
+                for _, v2 in ipairs(vertices2) do
+                    if vector_length(vector_sub(v1, v2)) < threshold then
+                        table.insert(closestPairs, { v1, v2 })
+                    end
+                end
+            end
+
+            -- Criar polígonos de conexão para todos os pares de vértices próximos
+            for p = 1, #closestPairs - 1 do
+                local pair1 = closestPairs[p]
+                local pair2 = closestPairs[p + 1]
+
+                local newPolygon = {
+                    pair1[1],
+                    pair1[2],
+                    pair2[2],
+                    pair2[1]
+                }
+
+                table.insert(bridgePolygons, newPolygon)
+            end
+        end
+    end
+
+    return bridgePolygons
+end
+
 function AddPolysFromObjects(Objs)
 	local Vertexes = {}
 	for k = 1, #Objs do
@@ -5769,13 +5811,18 @@ function AddPolysFromObjects(Objs)
 			if k ~= i then
 				local VertexList = {Vertexes[k].Vertexes, Vertexes[i].Vertexes}
 				AddNecessaryVertices(VertexList)
-				local V1, V2, V3, V4 = DrawConnectionPolygons(VertexList, 2.0)
-				if V1 ~= nil then
-					NewVertexes[#NewVertexes+1] = {V1, V2, V4, V3}
-				end
+				--local V1, V2, V3, V4 = DrawConnectionPolygons(VertexList, 2.0)
+				--if V1 ~= nil then
+				--	NewVertexes[#NewVertexes+1] = {V1, V2, V4, V3}
+				--end
 			end
 		end
 	end
+	local Vertexes2 = {}
+	for k = 1, #Vertexes do
+		Vertexes2[#Vertexes2+1] = Vertexes[k].Vertexes
+	end
+	local Bridges = CreateBridgePolygons(Vertexes2, 2.0)
 	for k = 1, #Vertexes do
 		Polys1[#Polys1+1] = {}
 		for j = 1, #Vertexes[k].Vertexes do
@@ -5812,10 +5859,10 @@ function AddPolysFromObjects(Objs)
 	--	end
 	--end
 
-	for k = 1, #NewVertexes do
+	for k = 1, #Bridges do
 		Polys1[#Polys1+1] = {}
-		for j = 1, #NewVertexes[k] do
-			Polys1[#Polys1][#Polys1[#Polys1]+1] = NewVertexes[k][j]
+		for j = 1, #Bridges[k] do
+			Polys1[#Polys1][#Polys1[#Polys1]+1] = Bridges[k][j]
 		end
 	end
 	SetAllPolysNeighboors()
