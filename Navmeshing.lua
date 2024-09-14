@@ -29,9 +29,16 @@ function LoadJSONFile(Path)
 end
 
 local Polys1 = {}
+local VehNavIDs = {}
+local PlatformIDs = {}
 
-util.create_thread(function()
-	local Contents = LoadJSONFile(filesystem.scripts_dir().."\\navs\\LastNav.json")
+function LoadNavmesh(File, TableTarget)
+	local T = Polys1
+	if TableTarget ~= nil then
+		T = TableTarget
+	end
+	local IDs = {}
+	local Contents = LoadJSONFile(filesystem.scripts_dir().."\\navs\\"..File)
 	if Contents ~= nil then
 		local ContentsIT = 0
 		for k = 1, #Contents do
@@ -49,139 +56,52 @@ util.create_thread(function()
 					Vertexes[#Vertexes+1] = Contents[k].vertices[j]
 				end
 			end
-			Polys1[#Polys1+1] = {}
+			T[#T+1] = {}
 			if IsNil then
 				for i = 1, #Vertexes do
 					local Key = "Poly"..i
-					Polys1[#Polys1][#Polys1[#Polys1]+1] = {x = Vertexes[i][1], y = Vertexes[i][2], z = Vertexes[i][3]}
+					T[#T][#T[#T]+1] = {x = Vertexes[i][1], y = Vertexes[i][2], z = Vertexes[i][3]}
 				end
 			else
 				for i = 1, #Vertexes do
 					local Key = "Poly"..i
-					Polys1[#Polys1][#Polys1[#Polys1]+1] = {x = Contents[k][Key].x, y = Contents[k][Key].y, z = Contents[k][Key].z}
+					T[#T][#T[#T]+1] = {x = Contents[k][Key].x, y = Contents[k][Key].y, z = Contents[k][Key].z}
 				end
 			end
-			Polys1[#Polys1].LinkedIDs = Contents[k].LinkedIDs
-			Polys1[#Polys1].Flags = Contents[k].Flags
-			Polys1[#Polys1].Point = Contents[k].Point
-			Polys1[#Polys1].JumpTo = Contents[k].JumpTo or nil
-			Polys1[#Polys1].JumpedFrom = Contents[k].JumpedFrom or nil
+			T[#T].LinkedIDs = Contents[k].LinkedIDs
+			T[#T].Flags = Contents[k].Flags
+			T[#T].Point = Contents[k].Point
+			T[#T].JumpTo = Contents[k].JumpTo or nil
+			T[#T].JumpedFrom = Contents[k].JumpedFrom or nil
 			ContentsIT = ContentsIT + 1
 			if ContentsIT > 10 then
 				ContentsIT = 0
 				Wait()
 			end
+			IDs[#IDs+1] = #T
 			Print("Loading Navs")
 		end
-		Print("Loaded. Total Polygons is "..#Polys1)
-		SetAllPolysNeighboors()
+		Print("Loaded. Total Polygons is "..#T)
+		SetAllPolysNeighboors(nil, T)
 	end
+	return IDs
+end
+util.create_thread(function()
+	PlatformIDs = LoadNavmesh("LastNav.json")
 end)
 
-function ComputePoly2D(Polygon)
-    local PolyX = 0.0
-    local PolyY = 0.0
-    local signedArea = 0.0
-    local x0 = 0.0
-    local y0 = 0.0
-    local x1 = 0.0
-    local y1 = 0.0
-    local a = 0.0
-
-    local Iteration = 1
-    for i = 1, #Polygon-1 do
-        x0 = Polygon[i].x
-        y0 = Polygon[i].y
-        x1 = Polygon[i+1].x
-        y1 = Polygon[i+1].y
-        a = x0*y1 - x1*y0
-        signedArea = signedArea + a
-        PolyX = PolyX + (x0 + x1)*a
-        PolyY = PolyY + (y0 + y1)*a
-        Iteration = i
-    end
-
-    x0 = Polygon[Iteration+1].x
-    y0 = Polygon[Iteration+1].y
-    x1 = Polygon[1].x
-    y1 = Polygon[1].y
-    a = x0*y1 - x1*y0
-    signedArea = signedArea + a
-    PolyX = PolyX + (x0 + x1)*a
-    PolyY = PolyY + (y0 + y1)*a
-
-    signedArea = signedArea * 0.5
-    PolyX = PolyX / (6.0*signedArea)
-    PolyY = PolyY / (6.0*signedArea)
-    local PolyCentroid = {x = PolyX, y = PolyY}
-    return PolyCentroid
-end
-
-function ComputePoly3D(Polygon, X, Y)
-    local PolyX = 0.0
-    local PolyY = 0.0
-    local signedArea = 0.0
-    local x0 = 0.0
-    local y0 = 0.0
-    local x1 = 0.0
-    local y1 = 0.0
-    local a = 0.0
-
-    local Iteration = 1
-    for i = 1, #Polygon-1 do
-        x0 = Polygon[i][X]
-        y0 = Polygon[i][Y]
-        x1 = Polygon[i+1][X]
-        y1 = Polygon[i+1][Y]
-        a = x0*y1 - x1*y0
-        signedArea = signedArea + a
-        PolyX = PolyX + (x0 + x1)*a
-        PolyY = PolyY + (y0 + y1)*a
-        Iteration = i
-    end
-
-    x0 = Polygon[Iteration+1][X]
-    y0 = Polygon[Iteration+1][Y]
-    x1 = Polygon[1][X]
-    y1 = Polygon[1][Y]
-    a = x0*y1 - x1*y0
-    signedArea = signedArea + a
-    PolyX = PolyX + (x0 + x1)*a
-    PolyY = PolyY + (y0 + y1)*a
-
-    signedArea = signedArea * 0.5
-    PolyX = PolyX / (6.0*signedArea)
-    PolyY = PolyY / (6.0*signedArea)
-    local PolyCentroid = {x = PolyX, y = PolyY}
-    return PolyCentroid
-end
-
 function GetPolygonCenter(polygon)
-    local CenterXY = ComputePoly3D(polygon, "x", "y")
-    --local CenterYZ = ComputePoly3D(polygon, "y", "z")
-    local CenterZ = 0.0
-    local j = #polygon
-    for i = 1, #polygon do
-        if math.abs(polygon[i].z - polygon[j].z) > 0.1 then
-            local CenterZX = ComputePoly3D(polygon, "z", "x")
-            CenterZ = CenterZX.x
-            break
-        else
-            CenterZ = polygon[1].z
-        end
-        j = #polygon
-    end
-    local Center = {x = CenterXY.x, y = CenterXY.y, z = CenterZ}
+	local Center = calcularCentroidePoligono3D(polygon)
     return Center
 end
 
-for i = 1, #Polys1 do
-	Polys1[i].Center = GetPolygonCenter(Polys1[i])
-end
-
-function SetAllPolysNeighboors(EditIndex)
+function SetAllPolysNeighboors(EditIndex, TableTarget)
+	local T = Polys1
+	if TableTarget ~= nil then
+		T = TableTarget
+	end
 	local Start = 1
-	local End = #Polys1
+	local End = #T
 	local It = 0
 	local ItMax = 20
 	if EditIndex ~= nil then
@@ -189,70 +109,71 @@ function SetAllPolysNeighboors(EditIndex)
 		End = EditIndex
 	end
 	for i = Start, End do
-		Polys1[i].Center = GetPolygonCenter(Polys1[i])
-		Polys1[i].Neighboors = {}
-		Polys1[i].Edges = {}
-		local index = #Polys1[i]
-		for k = 1, #Polys1[i] do
+		T[i].Center = GetPolygonCenter(T[i])
+		T[i].Neighboors = {}
+		T[i].Edges = {}
+		local index = #T[i]
+		for k = 1, #T[i] do
 			local Sub = {
-				x = Polys1[i][k].x - ((Polys1[i][k].x - Polys1[i][index].x) / 2),
-				y = Polys1[i][k].y - ((Polys1[i][k].y - Polys1[i][index].y) / 2),
-				z = Polys1[i][k].z - ((Polys1[i][k].z - Polys1[i][index].z) / 2)
+				x = T[i][k].x - ((T[i][k].x - T[i][index].x) / 2),
+				y = T[i][k].y - ((T[i][k].y - T[i][index].y) / 2),
+				z = T[i][k].z - ((T[i][k].z - T[i][index].z) / 2)
 			}
-			Polys1[i].Edges[#Polys1[i].Edges+1] = Sub
+			T[i].Edges[#T[i].Edges+1] = Sub
 			index = k
 		end
-		Polys1[i].ID = i
-		Polys1[i].Closed = false
-		Polys1[i].Parent = i
-		Polys1[i].LocalPoints = {}
+		T[i].ID = i
+		T[i].Closed = false
+		T[i].Parent = i
+		T[i].LocalPoints = {}
 		for k = 1, 19 do --Old is 9
 			local Div = 0.0 + 0.05 * k
 			local NewSub = {
-				x = Polys1[i][1].x - ((Polys1[i][1].x - Polys1[i][3].x) * Div),
-				y = Polys1[i][1].y - ((Polys1[i][1].y - Polys1[i][3].y) * Div),
-				z = Polys1[i][1].z - ((Polys1[i][1].z - Polys1[i][3].z) * Div)}
+				x = T[i][1].x - ((T[i][1].x - T[i][3].x) * Div),
+				y = T[i][1].y - ((T[i][1].y - T[i][3].y) * Div),
+				z = T[i][1].z - ((T[i][1].z - T[i][3].z) * Div)}
 			local NewSub2 = {
-				x = Polys1[i][2].x - ((Polys1[i][2].x - Polys1[i][3].x) * Div),
-				y = Polys1[i][2].y - ((Polys1[i][2].y - Polys1[i][3].y) * Div),
-				z = Polys1[i][2].z - ((Polys1[i][2].z - Polys1[i][3].z) * Div)}
+				x = T[i][2].x - ((T[i][2].x - T[i][3].x) * Div),
+				y = T[i][2].y - ((T[i][2].y - T[i][3].y) * Div),
+				z = T[i][2].z - ((T[i][2].z - T[i][3].z) * Div)}
 			local NewSub3 = {
-				x = Polys1[i][1].x - ((Polys1[i][1].x - Polys1[i][2].x) * Div),
-				y = Polys1[i][1].y - ((Polys1[i][1].y - Polys1[i][2].y) * Div),
-				z = Polys1[i][1].z - ((Polys1[i][1].z - Polys1[i][2].z) * Div)
+				x = T[i][1].x - ((T[i][1].x - T[i][2].x) * Div),
+				y = T[i][1].y - ((T[i][1].y - T[i][2].y) * Div),
+				z = T[i][1].z - ((T[i][1].z - T[i][2].z) * Div)
 			}
-			Polys1[i].LocalPoints[#Polys1[i].LocalPoints+1] = NewSub
-			Polys1[i].LocalPoints[#Polys1[i].LocalPoints+1] = NewSub2
-			Polys1[i].LocalPoints[#Polys1[i].LocalPoints+1] = NewSub3
+			T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub
+			T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub2
+			T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub3
 		end
 		
-		if Polys1[i].JumpTo == nil then
-			Polys1[i].JumpTo = {}
+		if T[i].JumpTo == nil then
+			T[i].JumpTo = {}
 		end
-		if Polys1[i].JumpedFrom == nil then
-			Polys1[i].JumpedFrom = {}
+		if T[i].JumpedFrom == nil then
+			T[i].JumpedFrom = {}
 		end
-		if Polys1[i].LinkedIDs ~= nil then
-			for k = 1, #Polys1[i].LinkedIDs do
+		if T[i].LinkedIDs ~= nil then
+			for k = 1, #T[i].LinkedIDs do
 				local CanInsert = true
-				for j = 1, #Polys1[i].Neighboors do
-					if Polys1[i].LinkedIDs[k] == Polys1[i].Neighboors[j] then
+				for j = 1, #T[i].Neighboors do
+					if T[i].LinkedIDs[k] == T[i].Neighboors[j] then
 						CanInsert = false
 						break
 					end
 				end
 				if CanInsert then
-					Polys1[i].Neighboors[#Polys1[i].Neighboors+1] = Polys1[i].LinkedIDs[k]
+					T[i].Neighboors[#T[i].Neighboors+1] = T[i].LinkedIDs[k]
 				end
 			end
 		else
-			Polys1[i].LinkedIDs = {}
+			T[i].LinkedIDs = {}
 		end
-		if Polys1[i].Flags == nil then
-			Polys1[i].Flags = 0
+		if T[i].Flags == nil then
+			T[i].Flags = 0
 		end
 		Print("Calculating")
 		It = It + 1
+		T[i].BoundingBox = calcularBoundingBoxPoligono(T[i])
 		if It > ItMax then
 			It = 0
 			Wait()
@@ -263,16 +184,16 @@ function SetAllPolysNeighboors(EditIndex)
 	local It3 = 0
 	local It4 = 0
 	local It5 = 0
-	for i = 1, #Polys1 do
-		for k = 1, #Polys1 do
+	for i = 1, #T do
+		for k = 1, #T do
 			if k ~= i then
-				for j = 1, #Polys1[i].Edges do
-					for a = 1, #Polys1[k].Edges do
-						if Polys1[i].Edges[j].x == Polys1[k].Edges[a].x and
-						Polys1[i].Edges[j].y == Polys1[k].Edges[a].y and
-						Polys1[i].Edges[j].z == Polys1[k].Edges[a].z then
+				for j = 1, #T[i].Edges do
+					for a = 1, #T[k].Edges do
+						if T[i].Edges[j].x == T[k].Edges[a].x and
+						T[i].Edges[j].y == T[k].Edges[a].y and
+						T[i].Edges[j].z == T[k].Edges[a].z then
 						--if polygons_are_neighbors(Polys1[i], Polys1[k]) then
-							Polys1[i].Neighboors[#Polys1[i].Neighboors+1] = k
+							T[i].Neighboors[#T[i].Neighboors+1] = k
 						end
 						
 						Print("Calculating neighbors")
@@ -1056,13 +977,13 @@ local Coords2_2 = {x = 0.0, y = 0.0, z = 0.0}
 local GridSizeX = 1
 local GridSizeY = 1
 local GridOffset = 0.5
-menu.slider(AddPolysMenu, "Grid Size X", {"gridsizex"}, "", 0, 10, GridSizeX, 1, function(on_change)
+menu.slider(AddPolysMenu, "Grid Size X", {"gridsizex"}, "", 0, 30, GridSizeX, 1, function(on_change)
 	GridSizeX = on_change
 end)
-menu.slider(AddPolysMenu, "Grid Size Y", {"gridsizex"}, "", 0, 10, GridSizeY, 1, function(on_change)
+menu.slider(AddPolysMenu, "Grid Size Y", {"gridsizex"}, "", 0, 30, GridSizeY, 1, function(on_change)
 	GridSizeY = on_change
 end)
-menu.slider_float(AddPolysMenu, "Grid Size Offset", {"gridoffset"}, "", 50, 500, 50, 50, function(on_change)
+menu.slider_float(AddPolysMenu, "Grid Size Offset", {"gridoffset"}, "", 50, 1000, 50, 50, function(on_change)
 	GridOffset = on_change / 100
 end)
 local GridRotationX = 0.0
@@ -1268,7 +1189,7 @@ menu.action(AddPolysMenu, "Add Poly Grid Raycast Manual", {}, "Use NUMPAD to mov
 		--SetAllPolysNeighboors()
 	end
 	if AddState7 == 2 then
-		Wait()
+		Wait(10)
 		AddState7 = 0
 	end
 end)
@@ -1499,21 +1420,12 @@ menu.action(PolygonLoadOrSaveMenu, "Save Polys", {}, "", function(Toggle)
 	SaveJSONFile(filesystem.scripts_dir().."\\navs\\LastNav.json", ToJSON)
 end)
 
-menu.action(PolygonLoadOrSaveMenu, "Load Polys", {}, "", function(Toggle)
-	local Contents = LoadJSONFile(filesystem.scripts_dir().."\\navs\\LastNav.json")
-	for k = 1, #Contents do
-		Polys1[#Polys1+1] = {
-			{x = Contents[k].Poly1.x, y = Contents[k].Poly1.y, z = Contents[k].Poly1.z},
-			{x = Contents[k].Poly2.x, y = Contents[k].Poly2.y, z = Contents[k].Poly2.z},
-			{x = Contents[k].Poly3.x, y = Contents[k].Poly3.y, z = Contents[k].Poly3.z},
-			Center = {x = Contents[k].Center.x, y = Contents[k].Center.y,  z = Contents[k].Center.z},
-			--Neighboors = Contents[k].Neighboors
-		}
-	end
+menu.action(PolygonLoadOrSaveMenu, "Load Vehicle Polys", {}, "", function(Toggle)
+	VehNavIDs = LoadNavmesh("PlaneNav.json", Polys1)
 end)
 
 local TestMenu = menu.list(NavmeshingMenu, "Test Navigation", {}, "")
-local StartPath = {x = -915.88293457031, y = 178.32453918457, z = 373.17413330078}
+local StartPath = {x = -979.44439697266, y = 166.95582580566, z = 373.1741027832}
 
 local NavNetID = 0
 local NavHandle = 0
@@ -1575,7 +1487,7 @@ menu.toggle(TestMenu, "Create Ped For Nav", {}, "", function(Toggle)
 				JumpDelay = JumpDelay - 1
 			end
 			if FoundIndex == 0 then
-				FoundPaths, InPolyIndex, TargetPolyIndex, InsideStartPolygon, TargetInsideTargetPolygon = AStarPathFind(Pos, PlayerPos, 3, nil, nil, nil, nil, nil, nil, true)
+				FoundPaths, InPolyIndex, TargetPolyIndex, InsideStartPolygon, TargetInsideTargetPolygon = AStarPathFind(Pos, PlayerPos, 3, false, nil, nil, nil, nil, nil, true)
 				if FoundPaths ~= nil then
 					FoundIndex = 1
 					LastTargetPos = PlayerPos
@@ -1853,7 +1765,7 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 		local StartPolysT = {}
 		local TargetPolysT = {}
 		local LastDistance = 0.0
-		local MinDist = 5.5
+		local MinDist = 1.5
 		local DistState = 1
 		while PedNav2 do
 			local Pos = ENTITY.GET_ENTITY_COORDS(NavHandle2)
@@ -1897,7 +1809,7 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 					TaskCoords = FoundPaths[PathIndex]
 					if not ENTITY.IS_ENTITY_AT_COORD(NavHandle2, TaskCoords.x, TaskCoords.y, TaskCoords.z, 1.0, 1.0, 1.0, false, true, 0) then
 						if RequestControlOfEntity(NavHandle2) then
-							TASK.TASK_VEHICLE_DRIVE_TO_COORD(NavHandle2, CarHandle2, TaskCoords.x, TaskCoords.y, TaskCoords.z, 350.0, 1, joaat(ModelName), 16777216, 0.01, 40000.0)
+							TASK.TASK_VEHICLE_DRIVE_TO_COORD(NavHandle2, CarHandle2, TaskCoords.x, TaskCoords.y, TaskCoords.z, 5.0, 1, joaat(ModelName), 16777216, 0.01, 40000.0)
 							TaskStatus = 1
 							LastDistance = DistanceBetween(Pos.x, Pos.y, Pos.z, TaskCoords.x, TaskCoords.y, TaskCoords.z)
 						end
@@ -2129,8 +2041,8 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 							--PED.SET_PED_MOVE_RATE_OVERRIDE(Peds[k].Handle, 1.5)
 							--PED.SET_AI_MELEE_WEAPON_DAMAGE_MODIFIER(100.0)
 							PED.SET_PED_USING_ACTION_MODE(Peds[k].Handle, false, -1, 0)
-							PED.SET_PED_MIN_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
-							PED.SET_PED_MAX_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+							--PED.SET_PED_MIN_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+							--PED.SET_PED_MAX_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
 						end
 						--local LastEnt = ENTITY._GET_LAST_ENTITY_HIT_BY_ENTITY(Peds[k].Handle)
 						--if LastEnt ~= 0 then
@@ -2173,7 +2085,7 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 								Peds[k].SearchState = 1
 								util.create_thread(function()
 									local NewPaths = nil
-									NewPaths, Peds[k].Start, Peds[k].TargetPoly, Peds[k].InsideStartPolygon, Peds[k].TargetInsideTargetPolygon, Peds[k].OldPaths = AStarPathFind(Pos, TargetPos, 0, false, Peds[k].StartIndexArg, Peds[k].TargetIndexArg, false, false, nil, false, false)
+									NewPaths, Peds[k].Start, Peds[k].TargetPoly, Peds[k].InsideStartPolygon, Peds[k].TargetInsideTargetPolygon, Peds[k].OldPaths = AStarPathFind(Pos, TargetPos, Peds[k].SearchLowLevel, false, Peds[k].StartIndexArg, Peds[k].TargetIndexArg, false, false, nil, false, false)
 									if NewPaths ~= nil then
 										if Peds[k] ~= nil then
 											if not Peds[k].AddMode then
@@ -2194,7 +2106,7 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 										--PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
 									end
 									
-									Wait(10000)
+									Wait(1000)
 									if Peds[k] ~= nil then
 										Peds[k].SearchState = 2
 										--Print("Reset")
@@ -2318,8 +2230,8 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 										end
 										if not HasSetTask then
 											--if Distance3 < 1.5 then
-												--if ENTITY.HAS_ENTITY_CLEAR_LOS_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 17) then
-												if CanIntersectEntity(Pos, TargetPos, Peds[k].OldPaths, Peds[k].ActualPath) then
+												if ENTITY.HAS_ENTITY_CLEAR_LOS_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 17) then
+												--if CanIntersectEntity(Pos, TargetPos, Peds[k].OldPaths, Peds[k].ActualPath) then
 													if RequestControlOfEntity(Peds[k].Handle) then
 														TASK.TASK_GO_STRAIGHT_TO_COORD_RELATIVE_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 0.0, 0.0, 2.0, 3.0, -1)
 														PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
@@ -2385,6 +2297,7 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 													--Peds[k].TaskState = 1
 													if Peds[k].SearchState == 2 then
 														Peds[k].SearchState = 0
+														
 													end
 												end
 											end
@@ -2458,12 +2371,22 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 								local Distance2 = DistanceBetween(Pos.x, Pos.y, Pos.z, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
 								Peds[k].SameDistanceTick = Peds[k].SameDistanceTick + 1
 								local HasSet = false
-								--if Distance2 < Peds[k].LastDistance then
-								--	Peds[k].LastDistance = Distance2
-								--	Peds[k].SameDistanceTick = 0
-								--end
+								if Distance2 < Peds[k].LastDistance then
+									Peds[k].LastDistance = Distance2
+									Peds[k].SameDistanceTick = 0
+								else
+									if Peds[k].ActualPath < #Peds[k].Paths then
+										if Peds[k].ActualPath == 1 then
+											Peds[k].ActualPath = Peds[k].ActualPath + 1
+											Peds[k].TaskState = 1
+										end
+										--if Peds[k].SearchState == 2 then
+										--	Peds[k].SearchState = 0
+										--end
+									end
+								end
 								--Distance2 > Peds[k].LastDistance then
-								if Peds[k].SameDistanceTick > 50 or math.floor(Distance2) > math.floor(Peds[k].LastDistance) then
+								if Peds[k].SameDistanceTick > 100 or math.floor(Distance2) > math.floor(Peds[k].LastDistance) then
 									--Peds[k].TaskState = 1
 									--Peds[k].ActualPath = Peds[k].ActualPath + 1
 									--if Peds[k].ActualPath > #Peds[k].Paths then
@@ -2496,7 +2419,10 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 										end
 									end
 								end
-								local R = 2.0
+								local R = 1.0
+								local CurSpd = ENTITY.GET_ENTITY_SPEED(Peds[k].Handle)
+								--R = R + CurSpd / 2
+								--Print(R)
 								if not HasSet then
 									if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, R, R, 2.0, false, false, 0) or
 									ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords2.x, Peds[k].TaskCoords2.y, Peds[k].TaskCoords2.z, R, R, 2.0, false, false, 0) then
@@ -3492,7 +3418,7 @@ function CopyPolygonsData(PolygonsT)
 	return NewData
 end
 
-function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CachedStartIndex, CachedTargetIndex, IncludePoints, IncludeStartNode, IncludePoints2, Funnel, PreferCenter, Flags)
+function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPolygons, CachedTargetIndex, IncludePoints, IncludeStartNode, IncludePoints2, Funnel, PreferCenter, Flags)
 	local StartIndex = 0
 	local TargetIndex = 0
 	local FinalNode = true
@@ -3501,6 +3427,10 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CachedStar
 	local IncludePointsNodes = false
 	local CenterOnly = false
 	local Bits = 0
+	local PolysT = Polys1
+	if CustomPolygons ~= nil then
+		PolysT = CustomPolygons
+	end
 	if PreferCenter ~= nil then
 		CenterOnly = PreferCenter
 	end
@@ -3519,42 +3449,39 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CachedStar
 	if Flags ~= nil then
 		Bits = Flags
 	end
-	if CachedStartIndex ~= nil then
-		StartIndex = CachedStartIndex
-	else
 		--StartIndex = GetPolygonDirectIndex(Start)
-		if StartIndex == 0 then
-			StartIndex = GetClosestPolygon(Polys1, Start, Include, LowPriorityLevel, Bits)
+	if StartIndex == 0 then
+		StartIndex = encontrarPoligonoDoPonto(Start, PolysT, 1.0)
+		if StartIndex == nil then
+			StartIndex = GetClosestPolygon(PolysT, Start, Include, LowPriorityLevel, Bits)
 		end
 	end
-	if CachedTargetIndex ~= nil then
-		TargetIndex = CachedTargetIndex
-	else
-		--TargetIndex = GetPolygonDirectIndex(Target)
-		if TargetIndex == 0 then
-			TargetIndex = GetClosestPolygon(Polys1, Target, Include, LowPriorityLevel, Bits)
+	if TargetIndex == 0 then
+		TargetIndex = encontrarPoligonoDoPonto(Target, PolysT, 1.0)
+		if TargetIndex == nil then
+			TargetIndex = GetClosestPolygon(PolysT, Target, Include, LowPriorityLevel, Bits)
 		end
 	end
 	if StartIndex == 0 or TargetIndex == 0 then
 		return nil
 	end
-	local InsideStartPolygon = InsidePolygon(Polys1[StartIndex], Start)
-	local TargetInsideTargetPolygon = InsidePolygon(Polys1[TargetIndex], Target)
+	local InsideStartPolygon = InsidePolygon(PolysT[StartIndex], Start)
+	local TargetInsideTargetPolygon = InsidePolygon(PolysT[TargetIndex], Target)
 	if StartIndex == TargetIndex then
 		if not FinalNode then
 			return {{x = Target.x, y = Target.y, z = Target.z, NodeFlags = 0, PolyID = TargetIndex}}, StartIndex, TargetIndex, InsideStartPolygon, TargetInsideTargetPolygon
 		else
 			local CoordsT = {}
-			for a = 1, #Polys1[TargetIndex] do
-				CoordsT[#CoordsT+1] = Polys1[TargetIndex][a]
+			for a = 1, #PolysT[TargetIndex] do
+				CoordsT[#CoordsT+1] = PolysT[TargetIndex][a]
 			end
-			CoordsT[#CoordsT+1] = Polys1[TargetIndex].Center
-			local ClosestPoint = closest_point_on_polygon(Polys1[TargetIndex], Target)
+			CoordsT[#CoordsT+1] = PolysT[TargetIndex].Center
+			local ClosestPoint = closest_point_on_polygon(PolysT[TargetIndex], Target)
 			CoordsT[#CoordsT+1] = ClosestPoint
 
 			if IncludePointsNodes then
-				for j = 1, #Polys1[TargetIndex].LocalPoints do
-					CoordsT[#CoordsT+1] = Polys1[TargetIndex].LocalPoints[j]
+				for j = 1, #PolysT[TargetIndex].LocalPoints do
+					CoordsT[#CoordsT+1] = PolysT[TargetIndex].LocalPoints[j]
 				end
 			end
 			local Dist = 10000.0
@@ -3569,18 +3496,32 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CachedStar
 			return {{x = SelectedVector.x, y = SelectedVector.y, z = SelectedVector.z, NodeFlags = 0, PolyID = TargetIndex}}, StartIndex, TargetIndex, InsideStartPolygon, TargetInsideTargetPolygon
 		end
 	end
-	local Nodes = a_star(StartIndex, TargetIndex, Polys1)
+	local Nodes = a_star(StartIndex, TargetIndex, PolysT)
 	if Nodes == nil then
 		return nil
 	end
 	local Nodes2 = {}
-	for k = 1, #Nodes do
-		Nodes2[#Nodes2+1] = Polys1[Nodes[k]].Center
+	local NodeIDs = {}
+	local AddNodes = false
+	for k = 2, #Nodes do
+		--local ClosestPoint = closest_point_on_polygon(Polys1[Nodes[k]], Target)
+		--Nodes2[#Nodes2+1] = ClosestPoint
+		Nodes2[#Nodes2+1] = PolysT[Nodes[k]].Center
+		if AddNodes then
+			NodeIDs[Nodes[k]] = 0
+			for i = 1, #Polys1[Nodes[k]].Neighboors do
+				if NodeIDs[Polys1[Nodes[k]].Neighboors[i]] == nil then
+					NodeIDs[Polys1[Nodes[k]].Neighboors[i]] = 0
+					Nodes[#Nodes+1] = Polys1[Nodes[k]].Neighboors[i]
+				end
+			end
+		end
 	end
-	if FinalNode then
+	if not FinalNode then
 		Nodes2[#Nodes2+1] = Target
 	end
-	local NewPaths = smoothPath(Nodes2, Polys1, Nodes)
+	table.remove(Nodes, 1)
+	local NewPaths = smoothPath(Nodes2, PolysT, Nodes)
 	return NewPaths, StartIndex, TargetIndex, InsideStartPolygon, TargetInsideTargetPolygon
 end
 
@@ -5885,6 +5826,7 @@ function a_star(start_index, goal_index, polygons)
                 open_set[neighbor_index] = true
             end
         end
+		Wait()
     end
 
     -- Se o open_set estiver vazio, significa que não há caminho
@@ -5900,131 +5842,6 @@ function reconstruct_path(came_from, current_index)
     end
     return total_path
 end
-
-function get_portal(polygonA, polygonB)
-    local portal = {}
-    for i = 1, #polygonA do
-        for j = 1, #polygonB do
-            if polygonA[i].x == polygonB[j].x and polygonA[i].y == polygonB[j].y and polygonA[i].z == polygonB[j].z then
-                table.insert(portal, polygonA[i])
-            end
-        end
-    end
-
-    -- Checa se encontrou exatamente dois vértices compartilhados
-    if #portal == 2 then
-        return portal
-    else
-        return nil
-    end
-end
-
-
--- Função para otimizar o caminho usando o algoritmo do funil
-function funnel_algorithm(polygons, path)
-    local portals = {}
-
-    -- Construir a lista de portais entre os polígonos no caminho
-    for i = 1, #path - 1 do
-        local polygonA = polygons[path[i]]
-        local polygonB = polygons[path[i + 1]]
-        local portal = get_portal(polygonA, polygonB)
-        if portal then
-            table.insert(portals, portal)
-        else
-            -- Debug: informa se não encontrou portal
-            --print("Aviso: Portal não encontrado entre polígonos", path[i], "e", path[i + 1])
-        end
-    end
-
-    -- Verifica se há portais suficientes
-    if #portals == 0 then
-       	--print("Erro: Nenhum portal encontrado no caminho.")
-        return path -- Retorna o caminho original se não houver portais
-    end
-
-    -- Agora que temos os portais, aplicamos o algoritmo do funil para otimizá-los
-    local start_point = polygons[path[1]].Center--calculate_centroid(polygons[path[1]])
-    local goal_point = polygons[path[#path]].Center--calculate_centroid(polygons[path[#path]])
-
-    return run_funnel(portals, start_point, goal_point)
-end
-
-function run_funnel(portals, start, goal)
-    local path = {}
-    local apexIndex, leftIndex, rightIndex = 1, 1, 1
-    local apex, left, right = start, portals[1][1], portals[1][2]
-
-    table.insert(path, apex) -- Começa pelo ponto inicial
-
-    local i = 2
-    while i <= #portals do
-        local newLeft, newRight = portals[i][1], portals[i][2]
-
-        -- Checar se podemos mudar o vértice à direita
-        if is_clockwise(apex, right, newRight) then
-			Print("True")
-            if apex == right or is_counter_clockwise(apex, left, newRight) then
-				
-				Print("True2")
-                right = newRight
-                rightIndex = i
-            else
-				Print("False")
-                -- Atualiza o ápice para o vértice à esquerda
-                apex = left
-                apexIndex = leftIndex
-                table.insert(path, apex)
-                
-                -- Resetar os vértices esquerdo e direito para o novo ápice
-                left = apex
-                right = apex
-                leftIndex = apexIndex
-                rightIndex = apexIndex
-
-                -- Voltar atrás na iteração para reprocessar a partir do novo ápice
-                i = apexIndex
-            end
-        end
-
-        -- Checar se podemos mudar o vértice à esquerda
-        if is_counter_clockwise(apex, left, newLeft) then
-			Print("True3")
-            if apex == left or is_clockwise(apex, right, newLeft) then
-				Print("True4")
-                left = newLeft
-                leftIndex = i
-            else
-				Print("False2")
-                -- Atualiza o ápice para o vértice à direita
-                apex = right
-                apexIndex = rightIndex
-                table.insert(path, apex)
-
-                -- Resetar os vértices esquerdo e direito para o novo ápice
-                left = apex
-                right = apex
-                leftIndex = apexIndex
-                rightIndex = apexIndex
-
-                -- Voltar atrás na iteração para reprocessar a partir do novo ápice
-                i = apexIndex
-            end
-        end
-
-        -- Avançar para o próximo portal
-        i = i + 1
-		Wait()
-    end
-
-    -- Adicionar o ponto final ao caminho
-    table.insert(path, goal)
-
-    return path
-end
-
-
-
 
 -- Função para calcular o produto vetorial em 3D
 function cross_product(v1, v2)
@@ -6046,48 +5863,11 @@ function normalize_vector(v)
     return {x = v.x / magnitude, y = v.y / magnitude, z = v.z / magnitude}
 end
 
--- Função para calcular se o ponto C está à direita de AB em 3D
-function is_clockwise(a, b, c)
-    local ab = vector_subtract(a, b)
-    local ac = vector_subtract(a, c)
-    local cross = cross_product(ab, ac)
-    return cross.z < 0  -- Checamos a orientação com relação ao eixo Z
-end
-
--- Função para calcular se o ponto C está à esquerda de AB em 3D
-function is_counter_clockwise(a, b, c)
-    local ab = vector_subtract(a, b)
-    local ac = vector_subtract(a, c)
-    local cross = cross_product(ab, ac)
-    return cross.z > 0
-end
-
-
-NewDrawAStar = false
+local NewDrawAStar = false
 menu.toggle(TestMenu, "New Optimize Path", {}, "", function(Toggle)
 	NewDrawAStar = Toggle
 	if NewDrawAStar then
-		local path, err = a_star(776, GetClosestPolygon(Polys1, ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID()), false, 1), Polys1)
-		--optimized_path = nil
-		--local portals = {}
-		--if path then
-		--	Print("Paths size "..#path)
-		--	--optimized_path = funnel_algorithm(Polys1, path)
-		--	--Print("Caminho otimizado, tamanho da tabela: ".. #optimized_path)
-		--	for i = 1, #path - 1 do
-		--		local polygonA = Polys1[path[i]]
-		--		local polygonB = Polys1[path[i + 1]]
-		--		local portal = get_portal(polygonA, polygonB)
-		--		if portal then
-		--			table.insert(portals, portal)
-		--		else
-		--			-- Debug: informa se não encontrou portal
-		--			--print("Aviso: Portal não encontrado entre polígonos", path[i], "e", path[i + 1])
-		--		end
-		--	end
-		--else
-		--	Print("err")
-		--end
+		local path, err = a_star(GetClosestPolygon(Polys1, StartPath, false, 1), GetClosestPolygon(Polys1, ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID()), false, 1), Polys1)
 		Print(type(path))
 		local NewPath = {}
 		if path then
@@ -6098,31 +5878,28 @@ menu.toggle(TestMenu, "New Optimize Path", {}, "", function(Toggle)
 			LinesPath[#LinesPath+1] = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
 			NewPath = smoothPath(LinesPath, Polys1, path)
 		end
-		
+		local Center = calcularCentroNavmesh(Polys1)
 		while NewDrawAStar do
 			if path then
-				--for i = 1, #portals do
-				--	GRAPHICS.DRAW_LINE(portals[i][1].x, portals[i][1].y, portals[i][1].z,
-				--	portals[i][2].x, portals[i][2].y, portals[i][2].z, 255, 255, 255, 150)
-				--end
-				--Print("Caminho otimizado:")
 				for i = 1, #NewPath-1 do
 					GRAPHICS.DRAW_LINE(NewPath[i].x, NewPath[i].y, NewPath[i].z,
-					NewPath[i+1].x, NewPath[i+1].y, NewPath[i+1].z, 255, 255, 255, 150)
+					NewPath[i+1].x, NewPath[i+1].y, NewPath[i+1].z, 255, 0, 0, 255)
 				end
 				--local Pos = calcularCentroidePoligono3D(Polys1[776])
 				--GRAPHICS.DRAW_MARKER(28, Pos.x,
 				--Pos.y, Pos.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.35, 0.35, 0.35, 150, 0, 0, 100, 0, false, 2, false, 0, 0, false)
-				--for k = 1, #path do
-				--	GRAPHICS.DRAW_POLY(Polys1[path[k]][1].x, Polys1[path[k]][1].y, Polys1[path[k]][1].z,
-				--	Polys1[path[k]][2].x, Polys1[path[k]][2].y, Polys1[path[k]][2].z,
-				--	Polys1[path[k]][3].x, Polys1[path[k]][3].y, Polys1[path[k]][3].z,
-				--	100, 100, 100, 100)
-				--	GRAPHICS.DRAW_LINE(Polys1[path[k]][1].x, Polys1[path[k]][1].y, Polys1[path[k]][1].z,
-				--	Polys1[path[k]][2].x, Polys1[path[k]][2].y, Polys1[path[k]][2].z, 255, 255, 255, 150)
-				--	GRAPHICS.DRAW_LINE(Polys1[path[k]][1].x, Polys1[path[k]][1].y, Polys1[path[k]][1].z,
-				--	Polys1[path[k]][3].x, Polys1[path[k]][3].y, Polys1[path[k]][3].z, 255, 255, 255, 150)
-				--end
+				for k = 1, #path do
+					GRAPHICS.DRAW_POLY(Polys1[path[k]][1].x, Polys1[path[k]][1].y, Polys1[path[k]][1].z,
+					Polys1[path[k]][2].x, Polys1[path[k]][2].y, Polys1[path[k]][2].z,
+					Polys1[path[k]][3].x, Polys1[path[k]][3].y, Polys1[path[k]][3].z,
+					100, 100, 100, 100)
+					GRAPHICS.DRAW_LINE(Polys1[path[k]][1].x, Polys1[path[k]][1].y, Polys1[path[k]][1].z,
+					Polys1[path[k]][2].x, Polys1[path[k]][2].y, Polys1[path[k]][2].z, 255, 255, 255, 150)
+					GRAPHICS.DRAW_LINE(Polys1[path[k]][1].x, Polys1[path[k]][1].y, Polys1[path[k]][1].z,
+					Polys1[path[k]][3].x, Polys1[path[k]][3].y, Polys1[path[k]][3].z, 255, 255, 255, 150)
+				end
+				GRAPHICS.DRAW_MARKER(28, Center.x,
+				Center.y, Center.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.35, 0.35, 0.35, 150, 0, 0, 100, 0, false, 2, false, 0, 0, false)
 			end
 			Wait()
 		end
@@ -6168,15 +5945,17 @@ end
 -- Função para verificar se a linha entre dois pontos passa por dentro de algum polígono
 function canConnectDirectly(p1, p2, polygons, indexes)
     -- Vamos dividir a linha entre p1 e p2 em pequenos segmentos
-    local numSegments = 10
+    local numSegments = math.floor(DistanceBetween(polygons[indexes[1]].Center.x, polygons[indexes[1]].Center.y, polygons[indexes[1]].Center.z,
+	polygons[indexes[#indexes]].Center.x, polygons[indexes[#indexes]].Center.y, polygons[indexes[#indexes]].Center.z)) * 10--50
+	
     for i = 0, numSegments do
         -- Interpolação linear entre p1 e p2 para criar um ponto intermediário
         local t = i / numSegments
         local intermediatePoint = {
             x = p1.x * (1 - t) + p2.x * t,
-            y = p1.y * (1 - t) + p2.y * t
+            y = p1.y * (1 - t) + p2.y * t,
+            z = p1.z * (1 - t) + p2.z * t
         }
-
         -- Verificar se esse ponto intermediário está dentro de algum polígono
         local insideAnyPolygon = false
 		for k = 1, #indexes do
@@ -6187,7 +5966,6 @@ function canConnectDirectly(p1, p2, polygons, indexes)
                 break
             end
         end
-
         -- Se algum ponto intermediário não estiver dentro de nenhum polígono, há uma obstrução
         if not insideAnyPolygon then
             return false
@@ -6235,4 +6013,705 @@ function smoothPath(path, polygons, indexes)
     end
 
     return smoothedPath
+end
+
+function SplitGlobals(GlobalString)
+	local String = GlobalString
+	local Value = String:gsub("%[(.-)]", "+1")
+	local NewValue = Value:gsub("%a", "")
+	local NewValue2 = NewValue:gsub("._", "+")
+	local NewValue3 = NewValue2:gsub("_", "")
+	local _Text, SymbolCount = NewValue3:gsub("+", "")
+	local PatternCount = "(%d+)"
+	for i = 1, SymbolCount do
+		PatternCount = PatternCount .. "+(%d+)"
+	end
+	local Global, Global2, Global3, Global4, Global5, Global6, Global7 = NewValue3:match(PatternCount)
+	local GlobalNumber = 0
+	if Global ~= nil then
+		GlobalNumber = GlobalNumber + tonumber(Global)
+	end
+	if Global2 ~= nil then
+		GlobalNumber = GlobalNumber + tonumber(Global2)
+	end
+	if Global3 ~= nil then
+		GlobalNumber = GlobalNumber + tonumber(Global3)
+	end
+	if Global4 ~= nil then
+		GlobalNumber = GlobalNumber + tonumber(Global4)
+	end
+	if Global5 ~= nil then
+		GlobalNumber = GlobalNumber + tonumber(Global5)
+	end
+	if Global6 ~= nil then
+		GlobalNumber = GlobalNumber + tonumber(Global6)
+	end
+	if Global7 ~= nil then
+		GlobalNumber = GlobalNumber + tonumber(Global7)
+	end
+	return GlobalNumber
+end
+
+--[[
+local ImprovedDM = false
+menu.toggle(GameModesMenu, "Improved Deathmatch", {}, "", function(Toggle)
+	ImprovedDM = Toggle
+
+end)
+]]
+
+-- Função que calcula o centro da navmesh
+function calcularCentroNavmesh(poligonos)
+    local somaX, somaY, somaZ = 0, 0, 0
+    local totalVertices = 0
+    
+    -- Percorre todos os polígonos
+    for _, poligono in ipairs(poligonos) do
+        -- Percorre todos os vértices de cada polígono
+        for _, vertice in ipairs(poligono) do
+            somaX = somaX + vertice.x
+            somaY = somaY + vertice.y
+            somaZ = somaZ + vertice.z
+            totalVertices = totalVertices + 1
+        end
+    end
+    
+    -- Calcula a média das coordenadas
+    local centroX = somaX / totalVertices
+    local centroY = somaY / totalVertices
+    local centroZ = somaZ / totalVertices
+    
+    -- Retorna as coordenadas do centroide
+    return {x = centroX, y = centroY, z = centroZ}
+end
+
+-- Função que calcula o offset relativo entre o centro e os vértices de cada polígono
+function calcularOffsetPoligonos(poligonos, centro)
+    local poligonosComOffset = {}
+    
+    -- Percorre todos os polígonos
+    for i, poligono in ipairs(poligonos) do
+        local poligonoOffset = {}
+        
+        -- Percorre todos os vértices de cada polígono
+        for j, vertice in ipairs(poligono) do
+            -- Calcula o offset relativo
+            local offsetX = vertice.x - centro.x
+            local offsetY = vertice.y - centro.y
+            local offsetZ = vertice.z - centro.z
+            
+            -- Salva o vértice com o offset
+            table.insert(poligonoOffset, {x = offsetX, y = offsetY, z = offsetZ})
+        end
+        
+        -- Adiciona o polígono com os vértices offsetados à nova lista
+        table.insert(poligonosComOffset, poligonoOffset)
+    end
+    
+    return poligonosComOffset
+end
+
+-- Função para rotacionar um ponto em torno do eixo X
+local function rotacionarX(vertice, anguloX)
+	local cosAngulo = math.cos(anguloX)
+	local sinAngulo = math.sin(anguloX)
+	local y = vertice.y * cosAngulo - vertice.z * sinAngulo
+	local z = vertice.y * sinAngulo + vertice.z * cosAngulo
+	return {x = vertice.x, y = y, z = z}
+end
+
+-- Função para rotacionar um ponto em torno do eixo Y
+local function rotacionarY(vertice, anguloY)
+	local cosAngulo = math.cos(anguloY)
+	local sinAngulo = math.sin(anguloY)
+	local x = vertice.x * cosAngulo + vertice.z * sinAngulo
+	local z = -vertice.x * sinAngulo + vertice.z * cosAngulo
+	return {x = x, y = vertice.y, z = z}
+end
+
+-- Função para rotacionar um ponto em torno do eixo Z
+local function rotacionarZ(vertice, anguloZ)
+	local cosAngulo = math.cos(anguloZ)
+	local sinAngulo = math.sin(anguloZ)
+	local x = vertice.x * cosAngulo - vertice.y * sinAngulo
+	local y = vertice.x * sinAngulo + vertice.y * cosAngulo
+	return {x = x, y = y, z = vertice.z}
+end
+
+-- Função para rotacionar todos os polígonos com base nos ângulos de rotação do avião
+function rotacionarPoligonos(poligonos, anguloX, anguloY, anguloZ)
+	local poligonosRotacionados = {}
+
+	-- Percorre todos os polígonos
+	for i, poligono in ipairs(poligonos) do
+		local poligonoRotacionado = {}
+		
+		-- Percorre todos os vértices de cada polígono
+		for j, vertice in ipairs(poligono) do
+			-- Aplica as rotações
+			local verticeRotacionado = vertice
+			verticeRotacionado = rotacionarX(verticeRotacionado, anguloX)
+			verticeRotacionado = rotacionarY(verticeRotacionado, anguloY)
+			verticeRotacionado = rotacionarZ(verticeRotacionado, anguloZ)
+			
+			-- Adiciona o vértice rotacionado ao polígono rotacionado
+			table.insert(poligonoRotacionado, verticeRotacionado)
+		end
+		
+		-- Adiciona o polígono rotacionado à nova lista
+		table.insert(poligonosRotacionados, poligonoRotacionado)
+	end
+	
+	return poligonosRotacionados
+end
+	
+-- Função que move os polígonos para uma posição alvo
+function moverPoligonosParaDestino(poligonosComOffset, destino)
+    local poligonosMovidos = {}
+    
+    -- Percorre todos os polígonos
+    for i, poligono in ipairs(poligonosComOffset) do
+        local poligonoMovido = {}
+        
+        -- Percorre todos os vértices de cada polígono
+        for j, vertice in ipairs(poligono) do
+            -- Calcula a nova posição somando o offset à posição alvo (destino)
+            local novoX = vertice.x + destino.x
+            local novoY = vertice.y + destino.y
+            local novoZ = vertice.z + destino.z
+            
+            -- Adiciona o vértice movido ao novo polígono
+            table.insert(poligonoMovido, {x = novoX, y = novoY, z = novoZ})
+        end
+        
+        -- Adiciona o polígono movido à nova lista
+        table.insert(poligonosMovidos, poligonoMovido)
+    end
+    
+    return poligonosMovidos
+end
+
+-- Função para calcular o offset relativo entre o centro e os vértices de polígonos específicos com base nos índices fornecidos
+function calcularOffsetPoligonosComIndices(poligonos, indices, centro)
+    -- Tabela para armazenar os polígonos com offset calculado
+    local poligonosComOffset = {}
+
+    -- Percorre apenas os polígonos cujos índices foram fornecidos
+    for _, indice in ipairs(indices) do
+        local poligono = poligonos[indice]
+        local poligonoOffset = {}
+
+        -- Percorre todos os vértices do polígono
+        for _, vertice in ipairs(poligono) do
+            -- Calcula o offset relativo entre o vértice e o centro
+            local offsetX = vertice.x - centro.x
+            local offsetY = vertice.y - centro.y
+            local offsetZ = vertice.z - centro.z
+
+            -- Armazena o vértice com o offset calculado
+            table.insert(poligonoOffset, {x = offsetX, y = offsetY, z = offsetZ})
+        end
+        
+        -- Adiciona o polígono com offset à tabela final
+        poligonosComOffset[indice] = poligonoOffset
+    end
+
+    return poligonosComOffset
+end
+
+
+-- Armazenar a tabela original dos polígonos (cópia dos offsets)
+-- Função para armazenar os offsets originais dos vértices
+function armazenarOffsetsOriginais(poligonosComOffset, tableTarget)
+    -- Faz uma cópia da tabela de polígonos original
+    for i, poligono in ipairs(poligonosComOffset) do
+        local poligonoCopia = {}
+        for j, vertice in ipairs(poligono) do
+            table.insert(poligonoCopia, {x = vertice.x, y = vertice.y, z = vertice.z})
+        end
+        table.insert(tableTarget, poligonoCopia)
+    end
+end
+
+-- Função para armazenar os offsets originais de polígonos específicos, baseados nos índices fornecidos
+function armazenarOffsetsOriginaisComIndices(poligonos, indices)
+    local poligonosOriginais = {}
+
+    -- Percorre apenas os polígonos cujos índices foram fornecidos
+    for _, indice in ipairs(indices) do
+        local poligono = poligonos[indice]
+        local poligonoCopia = {}
+
+        -- Armazena cada vértice do polígono como uma cópia
+        for _, vertice in ipairs(poligono) do
+            table.insert(poligonoCopia, {x = vertice.x, y = vertice.y, z = vertice.z})
+        end
+        
+        -- Armazena a cópia do polígono original na nova tabela
+        poligonosOriginais[indice] = poligonoCopia
+    end
+
+    return poligonosOriginais  -- Retorna a tabela de offsets originais para os índices especificados
+end
+
+
+-- Função para mover e rotacionar os polígonos a cada tick sem acumulação de rotação
+function atualizarPoligonosParaDestinoERotacaoSemAcumulo(poligonosAtuais, poligonosOriginais, destino, rotacao)
+    -- Percorre todos os polígonos originais
+    for i, poligonoOriginal in ipairs(poligonosOriginais) do
+        -- Percorre todos os vértices de cada polígono original
+        for j, verticeOriginal in ipairs(poligonoOriginal) do
+            -- Usa o vértice original (offset) para recalcular a rotação a cada tick
+            local vertice = {x = verticeOriginal.x, y = verticeOriginal.y, z = verticeOriginal.z}
+            
+            -- Aplica a rotação nos eixos X, Y, e Z
+            vertice = rotacionarX(vertice, rotacao.x)
+            vertice = rotacionarY(vertice, rotacao.y)
+            vertice = rotacionarZ(vertice, rotacao.z)
+            
+            -- Depois, move o vértice rotacionado para a posição do avião (destino)
+            vertice.x = vertice.x + destino.x
+            vertice.y = vertice.y + destino.y
+            vertice.z = vertice.z + destino.z
+            
+            -- Atualiza o vértice atual na tabela de polígonos
+            poligonosAtuais[i][j] = vertice
+        end
+		poligonosAtuais[i].Center = GetPolygonCenter(poligonosAtuais[i])
+    end
+end
+
+-- Função para descobrir quais polígonos são bordas e retornar seus índices
+function descobrirPoligonosDeBorda(poligonos)
+    local bordas = {}
+
+    -- Função auxiliar para encontrar arestas de um polígono
+    local function obterArestas(poligono)
+        local arestas = {}
+        local numVertices = #poligono
+
+        -- Conecta cada vértice ao próximo (e o último ao primeiro)
+        for i = 1, numVertices do
+            local v1 = poligono[i]
+            local v2 = poligono[(i % numVertices) + 1]
+            table.insert(arestas, {{x = v1.x, y = v1.y, z = v1.z}, {x = v2.x, y = v2.y, z = v2.z}})
+        end
+
+        return arestas
+    end
+
+    -- Função auxiliar para comparar duas arestas (se são iguais, independentemente da ordem dos vértices)
+    local function arestasIguais(aresta1, aresta2)
+        return (aresta1[1].x == aresta2[1].x and aresta1[1].y == aresta2[1].y and aresta1[1].z == aresta2[1].z and
+                aresta1[2].x == aresta2[2].x and aresta1[2].y == aresta2[2].y and aresta1[2].z == aresta2[2].z) or
+               (aresta1[1].x == aresta2[2].x and aresta1[1].y == aresta2[2].y and aresta1[1].z == aresta2[2].z and
+                aresta1[2].x == aresta2[1].x and aresta1[2].y == aresta2[1].y and aresta1[2].z == aresta2[1].z)
+    end
+
+    -- Percorrer todos os polígonos para encontrar as arestas
+    local todasArestas = {}
+    for i, poligono in ipairs(poligonos) do
+        todasArestas[i] = obterArestas(poligono)
+    end
+
+    -- Verificar quais polígonos têm arestas de borda
+    for i, arestasPoligono in ipairs(todasArestas) do
+        local isBorda = false
+
+        for _, aresta in ipairs(arestasPoligono) do
+            local compartilhada = false
+
+            -- Verificar se a aresta é compartilhada com outro polígono
+            for j, outrasArestasPoligono in ipairs(todasArestas) do
+                if i ~= j then  -- Não comparar com o próprio polígono
+                    for _, outraAresta in ipairs(outrasArestasPoligono) do
+                        if arestasIguais(aresta, outraAresta) then
+                            compartilhada = true
+                            break
+                        end
+                    end
+                end
+                if compartilhada then break end
+            end
+
+            -- Se a aresta não foi compartilhada, o polígono é uma borda
+            if not compartilhada then
+                isBorda = true
+                break
+            end
+        end
+
+        -- Se pelo menos uma aresta não é compartilhada, o polígono é de borda
+        if isBorda then
+            table.insert(bordas, i)  -- Armazenar o índice do polígono de borda
+        end
+    end
+
+    return bordas  -- Retorna os índices dos polígonos de borda
+end
+
+
+local TestPlanePolys = false
+menu.toggle(TestMenu, "Test Plane Polys", {}, "", function(Toggle)
+	TestPlanePolys = Toggle
+	if TestPlanePolys then
+		local NewPolys = {}
+		local Center = calcularCentroNavmeshComIndices(Polys1, VehNavIDs)
+		local Offsets = calcularOffsetPoligonosComIndices(Polys1, VehNavIDs, Center)
+		local New = armazenarOffsetsOriginaisComIndices(Offsets, VehNavIDs)
+		local BorderIDs = descobrirPoligonosDeBordaComIndices(Polys1, PlatformIDs)
+		--encontrarVizinhos(poligonosBorda, poligonosDinamicos, tolerancia)
+		while TestPlanePolys do
+			local Veh = PED.GET_VEHICLE_PED_IS_IN(PLAYER.PLAYER_PED_ID(), true)
+			if Veh ~= 0 then
+				local Rot = ENTITY.GET_ENTITY_ROTATION(Veh, 0)
+				Rot.x = math.rad(Rot.x)
+				Rot.y = math.rad(Rot.y)
+				Rot.z = math.rad(Rot.z)
+				local Pos = ENTITY.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(Veh, -3.8, -4.8, 3.0)
+				atualizarPoligonosParaDestinoERotacaoSemAcumuloComIndices(New, Polys1, VehNavIDs, Pos, Rot)
+				atualizarTodosVizinhosComIndices(Polys1, BorderIDs, VehNavIDs, 10.0)
+			end
+			for k = 1, #BorderIDs do
+				local CPos = Polys1[BorderIDs[k]].Center
+				for i = 1, #Polys1[BorderIDs[k]].Neighboors do
+					local CPos2 = Polys1[Polys1[BorderIDs[k]].Neighboors[i]].Center
+					GRAPHICS.DRAW_LINE(CPos.x, CPos.y, CPos.z,
+					CPos2.x, CPos2.y, CPos2.z, 255, 255, 255, 150)
+				
+				end
+			end
+			Wait()
+		end
+		local Rot = {}
+		Rot.x = math.rad(0)
+		Rot.y = math.rad(0)
+		Rot.z = math.rad(0)
+		atualizarPoligonosParaDestinoERotacaoSemAcumuloComIndices(New, Polys1, VehNavIDs, Center, Rot)
+	end
+end)
+
+-- Função para calcular a bounding box de um polígono
+function calcularBoundingBoxPoligono(poligono)
+    local minX, minY, minZ = math.huge, math.huge, math.huge
+    local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
+
+    -- Percorre todos os vértices do polígono
+    for _, vertice in ipairs(poligono) do
+        if vertice.x < minX then minX = vertice.x end
+        if vertice.y < minY then minY = vertice.y end
+        if vertice.z < minZ then minZ = vertice.z end
+
+        if vertice.x > maxX then maxX = vertice.x end
+        if vertice.y > maxY then maxY = vertice.y end
+        if vertice.z > maxZ then maxZ = vertice.z end
+    end
+
+    return {min = {x = minX, y = minY, z = minZ}, max = {x = maxX, y = maxY, z = maxZ}}
+end
+
+
+-- Função para verificar se um ponto está dentro de uma bounding box
+function pontoDentroDaBoundingBox(ponto, boundingBox)
+    return ponto.x >= boundingBox.min.x and ponto.x <= boundingBox.max.x and
+           ponto.y >= boundingBox.min.y and ponto.y <= boundingBox.max.y and
+           ponto.z >= boundingBox.min.z and ponto.z <= boundingBox.max.z
+end
+
+
+-- Função para verificar se um ponto 2D (XY) está dentro de um polígono
+function pontoDentroDoPoligono(ponto, poligono)
+    local dentro = false
+    local j = #poligono
+
+    for i = 1, #poligono do
+        local vi = poligono[i]
+        local vj = poligono[j]
+
+        -- Verifica se a linha que conecta os vértices cruza o eixo horizontal ao nível do ponto
+        if ((vi.y > ponto.y) ~= (vj.y > ponto.y)) and
+           (ponto.x < (vj.x - vi.x) * (ponto.y - vi.y) / (vj.y - vi.y) + vi.x) then
+            dentro = not dentro
+        end
+        j = i
+    end
+
+    return dentro
+end
+-- Função para verificar se um ponto está dentro de uma bounding box com tolerância no eixo Z
+function pontoDentroDaBoundingBoxComTolerancia(ponto, boundingBox, toleranciaZ)
+    return ponto.x >= boundingBox.min.x and ponto.x <= boundingBox.max.x and
+           ponto.y >= boundingBox.min.y and ponto.y <= boundingBox.max.y and
+           ponto.z >= boundingBox.min.z - toleranciaZ and ponto.z <= boundingBox.max.z + toleranciaZ
+end
+
+-- Função para verificar se um ponto está dentro de um polígono com tolerância no eixo Z
+function pontoDentroDoPoligonoComTolerancia(ponto, poligono, toleranciaZ)
+    -- Primeiro, verificamos a altura (tolerância no eixo Z)
+    local zPoligono = poligono[1].z  -- Assume que todos os vértices têm a mesma coordenada Z (plano horizontal)
+    if ponto.z < zPoligono - toleranciaZ or ponto.z > zPoligono + toleranciaZ then
+        return false  -- Se o ponto estiver fora da tolerância no Z, retorna falso
+    end
+
+    -- Em seguida, verifica se o ponto está dentro do polígono no plano XY
+    local dentro = false
+    local j = #poligono
+
+    for i = 1, #poligono do
+        local vi = poligono[i]
+        local vj = poligono[j]
+
+        -- Verifica se a linha que conecta os vértices cruza o eixo horizontal ao nível do ponto
+        if ((vi.y > ponto.y) ~= (vj.y > ponto.y)) and
+           (ponto.x < (vj.x - vi.x) * (ponto.y - vi.y) / (vj.y - vi.y) + vi.x) then
+            dentro = not dentro
+        end
+        j = i
+    end
+
+    return dentro
+end
+
+
+
+-- Função para encontrar o índice do polígono em que um ponto está
+function encontrarPoligonoDoPonto(ponto, poligonos, toleranciaZ)
+	for i, poligono in ipairs(poligonos) do
+		-- Calcula a bounding box do polígono
+		local boundingBox = poligono.BoundingBox--calcularBoundingBoxPoligono(poligono)
+
+		-- Primeiro, verifica se o ponto está dentro da bounding box
+		if pontoDentroDaBoundingBoxComTolerancia(ponto, boundingBox, toleranciaZ) then
+			-- Depois, faz a verificação detalhada se o ponto está dentro do polígono
+			if pontoDentroDoPoligonoComTolerancia(ponto, poligono, toleranciaZ) then
+				return i  -- Retorna o índice do polígono
+			end
+		end
+	end
+
+	return nil  -- Retorna nil se o ponto não estiver em nenhum polígono
+end
+
+-- Função para calcular a distância entre dois pontos 3D
+function calcularDistancia(p1, p2)
+    local dx = p1.x - p2.x
+    local dy = p1.y - p2.y
+    local dz = p1.z - p2.z
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
+-- Função para verificar se dois polígonos são vizinhos com base em uma tolerância
+function saoVizinhos(poliBorda, poliDinamico, tolerancia)
+    -- Verifica a distância entre cada vértice do polígono de borda e cada vértice do polígono dinâmico
+    for _, verticeBorda in ipairs(poliBorda) do
+        for _, verticeDinamico in ipairs(poliDinamico) do
+            if calcularDistancia(verticeBorda, verticeDinamico) <= tolerancia then
+                return true  -- Se a distância entre um par de vértices for menor que a tolerância, são vizinhos
+            end
+        end
+    end
+    return false  -- Se nenhuma distância for menor que a tolerância, não são vizinhos
+end
+
+-- Função para encontrar todos os vizinhos entre os polígonos de borda e os dinâmicos
+function encontrarVizinhos(poligonosBorda, poligonosDinamicos, tolerancia)
+    local vizinhos = {}
+
+    -- Percorre cada polígono de borda
+    for i, poliBorda in ipairs(poligonosBorda) do
+        -- Percorre cada polígono dinâmico
+        for j, poliDinamico in ipairs(poligonosDinamicos) do
+            -- Verifica se eles são vizinhos
+            if saoVizinhos(poliBorda, poliDinamico, tolerancia) then
+                table.insert(vizinhos, {borda = i, dinamico = j})  -- Armazena o índice de polígonos vizinhos
+            end
+        end
+    end
+
+    return vizinhos  -- Retorna a lista de pares de polígonos que são vizinhos
+end
+
+-- Função para adicionar um vizinho ao polígono, se ainda não estiver presente
+function adicionarVizinho(poligonos, indicePoligono, indiceVizinho)
+    local vizinhos = poligonos[indicePoligono].Neighboors
+    -- Verifica se o índice já está na lista de vizinhos
+    for _, vizinho in ipairs(vizinhos) do
+        if vizinho == indiceVizinho then
+            return  -- O vizinho já está na lista, não faz nada
+        end
+    end
+    -- Adiciona o índice do vizinho
+    table.insert(vizinhos, indiceVizinho)
+end
+
+-- Função para remover um vizinho da lista de vizinhos do polígono
+function removerVizinho(poligonos, indicePoligono, indiceVizinho)
+    local vizinhos = poligonos[indicePoligono].Neighboors
+    for i, vizinho in ipairs(vizinhos) do
+        if vizinho == indiceVizinho then
+            table.remove(vizinhos, i)  -- Remove o vizinho da lista
+            return
+        end
+    end
+end
+
+-- Função para gerenciar a lista de vizinhos com base na distância, usando índices
+function atualizarVizinhosComIndices(poligonos, indiceBorda, indiceDinamico, tolerancia)
+    local poliBorda = poligonos[indiceBorda]
+    local poliDinamico = poligonos[indiceDinamico]
+
+    -- Verifica se são vizinhos (dentro da tolerância)
+    if saoVizinhos(poliBorda, poliDinamico, tolerancia) then
+        -- Adiciona o polígono dinâmico como vizinho do polígono de borda
+        adicionarVizinho(poligonos, indiceBorda, indiceDinamico)
+        -- Adiciona o polígono de borda como vizinho do polígono dinâmico
+        adicionarVizinho(poligonos, indiceDinamico, indiceBorda)
+    else
+        -- Se estiverem distantes, remover da lista de vizinhos
+        removerVizinho(poligonos, indiceBorda, indiceDinamico)
+        removerVizinho(poligonos, indiceDinamico, indiceBorda)
+    end
+end
+
+-- Função para atualizar os vizinhos entre polígonos de borda e dinâmicos, usando índices
+function atualizarTodosVizinhosComIndices(poligonos, indicesBorda, indicesDinamicos, tolerancia)
+    -- Percorre cada índice de polígono de borda
+    for _, indiceBorda in ipairs(indicesBorda) do
+        -- Percorre cada índice de polígono dinâmico
+        for _, indiceDinamico in ipairs(indicesDinamicos) do
+            -- Atualiza a relação de vizinhança entre o polígono de borda e o dinâmico
+            atualizarVizinhosComIndices(poligonos, indiceBorda, indiceDinamico, tolerancia)
+        end
+    end
+end
+
+-- Função que calcula o centro da navmesh com base em uma lista de índices de polígonos
+function calcularCentroNavmeshComIndices(poligonos, indices)
+    local somaX, somaY, somaZ = 0, 0, 0
+    local totalVertices = 0
+    
+    -- Percorre apenas os polígonos cujos índices foram fornecidos
+    for _, indice in ipairs(indices) do
+        local poligono = poligonos[indice]
+        
+        -- Percorre todos os vértices de cada polígono
+        for _, vertice in ipairs(poligono) do
+            somaX = somaX + vertice.x
+            somaY = somaY + vertice.y
+            somaZ = somaZ + vertice.z
+            totalVertices = totalVertices + 1
+        end
+    end
+    
+    -- Calcula a média das coordenadas (centroide)
+    if totalVertices == 0 then
+        return nil  -- Caso não haja vértices
+    end
+
+    local centroX = somaX / totalVertices
+    local centroY = somaY / totalVertices
+    local centroZ = somaZ / totalVertices
+    
+    -- Retorna as coordenadas do centroide
+    return {x = centroX, y = centroY, z = centroZ}
+end
+
+-- Função para mover e rotacionar os polígonos a cada tick usando índices, sem acumulação de rotação
+function atualizarPoligonosParaDestinoERotacaoSemAcumuloComIndices(poligonosOriginais, poligonosAtuais, indices, destino, rotacao)
+    -- Percorre os polígonos pelos índices fornecidos
+    for _, indice in ipairs(indices) do
+        local poligonoOriginal = poligonosOriginais[indice]
+        local poligonoAtual = poligonosAtuais[indice]
+        
+        -- Percorre todos os vértices de cada polígono original
+        for j, verticeOriginal in ipairs(poligonoOriginal) do
+            -- Usa o vértice original (offset) para recalcular a rotação a cada tick
+            local vertice = {x = verticeOriginal.x, y = verticeOriginal.y, z = verticeOriginal.z}
+            
+            -- Aplica a rotação nos eixos X, Y e Z
+            vertice = rotacionarX(vertice, rotacao.x)
+            vertice = rotacionarY(vertice, rotacao.y)
+            vertice = rotacionarZ(vertice, rotacao.z)
+            
+            -- Depois, move o vértice rotacionado para a posição do destino (avião ou plataforma)
+            vertice.x = vertice.x + destino.x
+            vertice.y = vertice.y + destino.y
+            vertice.z = vertice.z + destino.z
+            
+            -- Atualiza o vértice atual na tabela de polígonos atual
+            poligonoAtual[j] = vertice
+        end
+		poligonoAtual.Center = GetPolygonCenter(poligonoAtual)
+    end
+end
+
+-- Função para descobrir quais polígonos são bordas, com base em uma lista de índices
+function descobrirPoligonosDeBordaComIndices(poligonos, indices)
+    local bordas = {}
+
+    -- Função auxiliar para encontrar arestas de um polígono
+    local function obterArestas(poligono)
+        local arestas = {}
+        local numVertices = #poligono
+
+        -- Conecta cada vértice ao próximo (e o último ao primeiro)
+        for i = 1, numVertices do
+            local v1 = poligono[i]
+            local v2 = poligono[(i % numVertices) + 1]
+            table.insert(arestas, {{x = v1.x, y = v1.y, z = v1.z}, {x = v2.x, y = v2.y, z = v2.z}})
+        end
+
+        return arestas
+    end
+
+    -- Função auxiliar para comparar duas arestas (se são iguais, independentemente da ordem dos vértices)
+    local function arestasIguais(aresta1, aresta2)
+        return (aresta1[1].x == aresta2[1].x and aresta1[1].y == aresta2[1].y and aresta1[1].z == aresta2[1].z and
+                aresta1[2].x == aresta2[2].x and aresta1[2].y == aresta2[2].y and aresta1[2].z == aresta2[2].z) or
+               (aresta1[1].x == aresta2[2].x and aresta1[1].y == aresta2[2].y and aresta1[1].z == aresta2[2].z and
+                aresta1[2].x == aresta2[1].x and aresta1[2].y == aresta2[1].y and aresta1[2].z == aresta2[1].z)
+    end
+
+    -- Percorrer apenas os polígonos cujos índices foram fornecidos
+    local todasArestas = {}
+    for _, indice in ipairs(indices) do
+        todasArestas[indice] = obterArestas(poligonos[indice])
+    end
+
+    -- Verificar quais polígonos têm arestas de borda
+    for _, indice in ipairs(indices) do
+        local arestasPoligono = todasArestas[indice]
+        local isBorda = false
+
+        for _, aresta in ipairs(arestasPoligono) do
+            local compartilhada = false
+
+            -- Verificar se a aresta é compartilhada com outro polígono nos índices fornecidos
+            for _, outroIndice in ipairs(indices) do
+                if indice ~= outroIndice then
+                    local outrasArestasPoligono = todasArestas[outroIndice]
+                    for _, outraAresta in ipairs(outrasArestasPoligono) do
+                        if arestasIguais(aresta, outraAresta) then
+                            compartilhada = true
+                            break
+                        end
+                    end
+                end
+                if compartilhada then break end
+            end
+
+            -- Se a aresta não foi compartilhada, o polígono é uma borda
+            if not compartilhada then
+                isBorda = true
+                break
+            end
+        end
+
+        -- Se pelo menos uma aresta não é compartilhada, o polígono é de borda
+        if isBorda then
+            table.insert(bordas, indice)  -- Armazenar o índice do polígono de borda
+        end
+    end
+
+    return bordas  -- Retorna os índices dos polígonos de borda
 end
