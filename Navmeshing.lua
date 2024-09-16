@@ -16,7 +16,7 @@ local FlagBitNames = {
 
 local FlagsBits = 0
 
-local GridStartType = 1
+local GridStartType = 0
 
 function LoadJSONFile(Path)
     local MyTable = {}
@@ -44,7 +44,7 @@ local GlobalInfluenceRadius = 2.0
 local GlobalGridAreaX = 100.0
 local GlobalGridAreaY = 100.0
 
-function LoadNavmesh(File, TableTarget)
+function LoadNavmesh(File, TableTarget, LoadAll)
 	local T = Polys1
 	if TableTarget ~= nil then
 		T = TableTarget
@@ -85,6 +85,11 @@ function LoadNavmesh(File, TableTarget)
 			T[#T].Point = Contents[k].Point
 			T[#T].JumpTo = Contents[k].JumpTo or nil
 			T[#T].JumpedFrom = Contents[k].JumpedFrom or nil
+			if LoadAll then
+				T[#T].Neighboors = Contents[k].Neighboors
+				T[#T].Center = Contents[k].Center
+				T[#T].ID = #T
+			end
 			ContentsIT = ContentsIT + 1
 			if ContentsIT > 10 then
 				ContentsIT = 0
@@ -94,12 +99,13 @@ function LoadNavmesh(File, TableTarget)
 			Print("Loading Navs")
 		end
 		Print("Loaded. Total Polygons is "..#T)
-		SetAllPolysNeighboors(nil, T)
+
+		SetAllPolysNeighboors(nil, T, LoadAll)
 	end
 	return IDs
 end
 util.create_thread(function()
-	PlatformIDs = LoadNavmesh("LastNav.json")
+	PlatformIDs = LoadNavmesh("LastNav.json", nil, true)
 end)
 
 function GetPolygonCenter(polygon)
@@ -107,7 +113,7 @@ function GetPolygonCenter(polygon)
     return Center
 end
 
-function SetAllPolysNeighboors(EditIndex, TableTarget)
+function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations)
 	local T = Polys1
 	if TableTarget ~= nil then
 		T = TableTarget
@@ -121,130 +127,150 @@ function SetAllPolysNeighboors(EditIndex, TableTarget)
 		End = EditIndex
 	end
 	local UsePointCalc = false
-	for i = Start, End do
-		T[i].Center = GetPolygonCenter(T[i])
-		T[i].Neighboors = {}
-		T[i].Edges = {}
-		local index = #T[i]
-		for k = 1, #T[i] do
-			local Sub = {
-				x = T[i][k].x - ((T[i][k].x - T[i][index].x) / 2),
-				y = T[i][k].y - ((T[i][k].y - T[i][index].y) / 2),
-				z = T[i][k].z - ((T[i][k].z - T[i][index].z) / 2)
-			}
-			T[i].Edges[#T[i].Edges+1] = Sub
-			index = k
-		end
-		T[i].ID = i
-		T[i].Closed = false
-		T[i].Parent = i
-		T[i].LocalPoints = {}
-		if UsePointCalc then
-			for k = 1, 19 do --Old is 9
-				local Div = 0.0 + 0.05 * k
-				local NewSub = {
-					x = T[i][1].x - ((T[i][1].x - T[i][3].x) * Div),
-					y = T[i][1].y - ((T[i][1].y - T[i][3].y) * Div),
-					z = T[i][1].z - ((T[i][1].z - T[i][3].z) * Div)}
-				local NewSub2 = {
-					x = T[i][2].x - ((T[i][2].x - T[i][3].x) * Div),
-					y = T[i][2].y - ((T[i][2].y - T[i][3].y) * Div),
-					z = T[i][2].z - ((T[i][2].z - T[i][3].z) * Div)}
-				local NewSub3 = {
-					x = T[i][1].x - ((T[i][1].x - T[i][2].x) * Div),
-					y = T[i][1].y - ((T[i][1].y - T[i][2].y) * Div),
-					z = T[i][1].z - ((T[i][1].z - T[i][2].z) * Div)
+	if not IgnoreCalculations then
+		for i = Start, End do
+			T[i].Center = GetPolygonCenter(T[i])
+			T[i].Neighboors = {}
+			T[i].Edges = {}
+			local index = #T[i]
+			for k = 1, #T[i] do
+				local Sub = {
+					x = T[i][k].x - ((T[i][k].x - T[i][index].x) / 2),
+					y = T[i][k].y - ((T[i][k].y - T[i][index].y) / 2),
+					z = T[i][k].z - ((T[i][k].z - T[i][index].z) / 2)
 				}
-				T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub
-				T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub2
-				T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub3
+				T[i].Edges[#T[i].Edges+1] = Sub
+				index = k
 			end
-		end
-		if T[i].JumpTo == nil then
-			T[i].JumpTo = {}
-		end
-		if T[i].JumpedFrom == nil then
-			T[i].JumpedFrom = {}
-		end
-		if T[i].LinkedIDs ~= nil then
-			for k = 1, #T[i].LinkedIDs do
-				local CanInsert = true
-				for j = 1, #T[i].Neighboors do
-					if T[i].LinkedIDs[k] == T[i].Neighboors[j] then
-						CanInsert = false
-						break
+			T[i].ID = i
+			T[i].Closed = false
+			T[i].Parent = i
+			T[i].LocalPoints = {}
+			if UsePointCalc then
+				for k = 1, 19 do --Old is 9
+					local Div = 0.0 + 0.05 * k
+					local NewSub = {
+						x = T[i][1].x - ((T[i][1].x - T[i][3].x) * Div),
+						y = T[i][1].y - ((T[i][1].y - T[i][3].y) * Div),
+						z = T[i][1].z - ((T[i][1].z - T[i][3].z) * Div)}
+					local NewSub2 = {
+						x = T[i][2].x - ((T[i][2].x - T[i][3].x) * Div),
+						y = T[i][2].y - ((T[i][2].y - T[i][3].y) * Div),
+						z = T[i][2].z - ((T[i][2].z - T[i][3].z) * Div)}
+					local NewSub3 = {
+						x = T[i][1].x - ((T[i][1].x - T[i][2].x) * Div),
+						y = T[i][1].y - ((T[i][1].y - T[i][2].y) * Div),
+						z = T[i][1].z - ((T[i][1].z - T[i][2].z) * Div)
+					}
+					T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub
+					T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub2
+					T[i].LocalPoints[#T[i].LocalPoints+1] = NewSub3
+				end
+			end
+			if T[i].JumpTo == nil then
+				T[i].JumpTo = {}
+			end
+			if T[i].JumpedFrom == nil then
+				T[i].JumpedFrom = {}
+			end
+			if T[i].LinkedIDs ~= nil then
+				for k = 1, #T[i].LinkedIDs do
+					local CanInsert = true
+					for j = 1, #T[i].Neighboors do
+						if T[i].LinkedIDs[k] == T[i].Neighboors[j] then
+							CanInsert = false
+							break
+						end
+					end
+					if CanInsert then
+						T[i].Neighboors[#T[i].Neighboors+1] = T[i].LinkedIDs[k]
 					end
 				end
-				if CanInsert then
-					T[i].Neighboors[#T[i].Neighboors+1] = T[i].LinkedIDs[k]
-				end
+			else
+				T[i].LinkedIDs = {}
 			end
-		else
-			T[i].LinkedIDs = {}
+			if T[i].Flags == nil then
+				T[i].Flags = 0
+			end
+			Print("Calculating")
+			It = It + 1
+			--T[i].BoundingBox = calcularBoundingBoxPoligono(T[i])
+			--if It > ItMax then
+			--	It = 0
+			--	Wait()
+			--end
 		end
-		if T[i].Flags == nil then
-			T[i].Flags = 0
-		end
-		Print("Calculating")
-		It = It + 1
-		--T[i].BoundingBox = calcularBoundingBoxPoligono(T[i])
-		--if It > ItMax then
-		--	It = 0
-		--	Wait()
-		--end
-	end
-	local UseNewNeighborCalc = true
-	if not UseNewNeighborCalc then
-		ItMax = 150000
-		local It2 = 0
-		local It3 = 0
-		local It4 = 0
-		local It5 = 0
-		for i = 1, #T do
-			for k = 1, #T do
-				if k ~= i then
-					for j = 1, #T[i].Edges do
-						for a = 1, #T[k].Edges do
-							if T[i].Edges[j].x == T[k].Edges[a].x and
-							T[i].Edges[j].y == T[k].Edges[a].y and
-							T[i].Edges[j].z == T[k].Edges[a].z then
-							--if polygons_are_neighbors(Polys1[i], Polys1[k]) then
-								T[i].Neighboors[#T[i].Neighboors+1] = k
+		local UseNewNeighborCalc = 1
+		if UseNewNeighborCalc == 0 then
+			ItMax = 150000
+			local It2 = 0
+			local It3 = 0
+			local It4 = 0
+			local It5 = 0
+			for i = 1, #T do
+				for k = 1, #T do
+					if k ~= i then
+						for j = 1, #T[i].Edges do
+							for a = 1, #T[k].Edges do
+								if T[i].Edges[j].x == T[k].Edges[a].x and
+								T[i].Edges[j].y == T[k].Edges[a].y and
+								T[i].Edges[j].z == T[k].Edges[a].z then
+								--if polygons_are_neighbors(Polys1[i], Polys1[k]) then
+									T[i].Neighboors[#T[i].Neighboors+1] = k
+								end
+								
+								Print("Calculating neighbors")
+								It2 = It2 + 1
+								if It2 > ItMax then
+									It2 = 0
+									--Print(ItMax)
+									Wait()
+								end
 							end
-							
 							Print("Calculating neighbors")
-							It2 = It2 + 1
-							if It2 > ItMax then
-								It2 = 0
-								--Print(ItMax)
+							It3 = It3 + 1
+							if It3 > ItMax then
+								It3 = 0
 								Wait()
 							end
 						end
-						Print("Calculating neighbors")
-						It3 = It3 + 1
-						if It3 > ItMax then
-							It3 = 0
-							Wait()
-						end
+					end
+					Print("Calculating neighbors")
+					It4 = It4 + 1
+					if It4 > ItMax then
+						It4 = 0
+						Wait()
 					end
 				end
 				Print("Calculating neighbors")
-				It4 = It4 + 1
-				if It4 > ItMax then
-					It4 = 0
+				It5 = It5 + 1
+				if It5 > ItMax then
+					It5 = 0
 					Wait()
 				end
+				--Wait()
 			end
-			Print("Calculating neighbors")
-			It5 = It5 + 1
-			if It5 > ItMax then
-				It5 = 0
-				Wait()
+		elseif UseNewNeighborCalc == 1 then
+			conectarVizinhosComRaycast(T, 1.0)
+		elseif UseNewNeighborCalc == 2 then
+			-- Construir a kd-tree a partir dos polígonos
+			local PolygonsNewIDs = {}
+			for k = 1, #T do
+				PolygonsNewIDs[#PolygonsNewIDs+1] = {T[k].Center.x, T[k].Center.y, T[k].Center.z}
 			end
-			--Wait()
+			local kdTree = construirKdTree(PolygonsNewIDs)
+
+			-- Calcular os vizinhos para cada polígono
+			local k = 5 -- Número de vizinhos mais próximos que queremos encontrar
+			local vizinhosPorPoligono = calcularVizinhosParaPoligonosComDistanciaMaxima(T, kdTree, k, 5.0, 1.0)
+			--calcularVizinhosParaPoligonosComVerticesSemRaycast(T, kdTree, k, 100.0, 1.0)
+			--calcularVizinhosParaPoligonosComVerticesERaycast(T, kdTree, k, 1.0)
+			--calcularVizinhosParaTodosOsPoligonos(PolygonsNewIDs, kdTree, k)
+			--Print(#vizinhosPorPoligono)
+			for k = 1, #vizinhosPorPoligono do
+				T[k].Neighboors = vizinhosPorPoligono[k]
+			end
 		end
-	else
-		conectarVizinhosComRaycast(T, 1.0)
 	end
 	Grid = {}
 	if GridStartType == 0 then
@@ -253,7 +279,8 @@ function SetAllPolysNeighboors(EditIndex, TableTarget)
 			IDs[#IDs+1] = T[k].ID
 		end
 		Polys1Center = calcularCentroNavmeshComIndices(T, IDs)
-		Grid = inicializarGridEstatico(GlobalGridAreaX, GlobalGridAreaY, GlobalCellSize)
+		Grid = inicializarGridEstatico(Polys1Center.x, Polys1Center.y, GlobalCellSize)
+		--inicializarGridEstatico(GlobalGridAreaX, GlobalGridAreaY, GlobalCellSize)
 		armazenarPoligonosNoGridEstatico(Grid, T, GlobalCellSize, GlobalInfluenceRadius * GlobalCellSize)
 	elseif GridStartType == 1 then
 		armazenarPoligonosNoGrid(T, GridSizeIteration)
@@ -375,23 +402,42 @@ menu.toggle(DrawFunctionsMenu, "Draw Polys Neighboors", {}, "", function(Toggle)
 					Polys1[i][2].x, Polys1[i][2].y, Polys1[i][2].z,
 					Polys1[i][3].x, Polys1[i][3].y, Polys1[i][3].z,
 					R, G, B, 100)
-					GRAPHICS.DRAW_LINE(Polys1[i][1].x, Polys1[i][1].y, Polys1[i][1].z,
-					Polys1[i][2].x, Polys1[i][2].y, Polys1[i][2].z, 255, 0, 0, 150)
-					GRAPHICS.DRAW_LINE(Polys1[i][2].x, Polys1[i][2].y, Polys1[i][2].z,
-					Polys1[i][3].x, Polys1[i][3].y, Polys1[i][3].z, 0, 255, 0, 150)
-					GRAPHICS.DRAW_LINE(Polys1[i][3].x, Polys1[i][3].y, Polys1[i][3].z,
-					Polys1[i][1].x, Polys1[i][1].y, Polys1[i][1].z, 0, 0, 255, 150)
+					for k = 1, #Polys1[i] do
+						if k == #Polys1[i] then
+							GRAPHICS.DRAW_LINE(Polys1[i][k].x, Polys1[i][k].y, Polys1[i][k].z,
+							Polys1[i][1].x, Polys1[i][1].y, Polys1[i][1].z, R, G, B, 150)
+						else
+							GRAPHICS.DRAW_LINE(Polys1[i][k].x, Polys1[i][k].y, Polys1[i][k].z,
+							Polys1[i][k+1].x, Polys1[i][k+1].y, Polys1[i][k+1].z, R, G, B, 150)
+						end
+					end
+					if Polys1[i][4] ~= nil then
+						GRAPHICS.DRAW_POLY(Polys1[i][4].x, Polys1[i][4].y, Polys1[i][4].z,
+						Polys1[i][1].x, Polys1[i][1].y, Polys1[i][1].z,
+						Polys1[i][3].x, Polys1[i][3].y, Polys1[i][3].z,
+						R, G, B, 100)
+					end
 					for k = 1, #Polys1[i].Neighboors do
 						GRAPHICS.DRAW_POLY(Polys1[Polys1[i].Neighboors[k]][1].x, Polys1[Polys1[i].Neighboors[k]][1].y, Polys1[Polys1[i].Neighboors[k]][1].z,
 						Polys1[Polys1[i].Neighboors[k]][2].x, Polys1[Polys1[i].Neighboors[k]][2].y, Polys1[Polys1[i].Neighboors[k]][2].z,
 						Polys1[Polys1[i].Neighboors[k]][3].x, Polys1[Polys1[i].Neighboors[k]][3].y, Polys1[Polys1[i].Neighboors[k]][3].z,
 						R, G, B, 100)
-						GRAPHICS.DRAW_LINE(Polys1[Polys1[i].Neighboors[k]][1].x, Polys1[Polys1[i].Neighboors[k]][1].y, Polys1[Polys1[i].Neighboors[k]][1].z,
-						Polys1[Polys1[i].Neighboors[k]][2].x, Polys1[Polys1[i].Neighboors[k]][2].y, Polys1[Polys1[i].Neighboors[k]][2].z, 255, 0, 255, 150)
-						GRAPHICS.DRAW_LINE(Polys1[Polys1[i].Neighboors[k]][2].x, Polys1[Polys1[i].Neighboors[k]][2].y, Polys1[Polys1[i].Neighboors[k]][2].z,
-						Polys1[Polys1[i].Neighboors[k]][3].x, Polys1[Polys1[i].Neighboors[k]][3].y, Polys1[Polys1[i].Neighboors[k]][3].z, 0, 255, 0, 150)
-						GRAPHICS.DRAW_LINE(Polys1[Polys1[i].Neighboors[k]][3].x, Polys1[Polys1[i].Neighboors[k]][3].y, Polys1[Polys1[i].Neighboors[k]][3].z,
-						Polys1[Polys1[i].Neighboors[k]][1].x, Polys1[Polys1[i].Neighboors[k]][1].y, Polys1[Polys1[i].Neighboors[k]][1].z, 0, 0, 255, 150)
+						if Polys1[Polys1[i].Neighboors[k]][4] ~= nil then
+							GRAPHICS.DRAW_POLY(Polys1[Polys1[i].Neighboors[k]][4].x, Polys1[Polys1[i].Neighboors[k]][4].y, Polys1[Polys1[i].Neighboors[k]][4].z,
+							Polys1[Polys1[i].Neighboors[k]][1].x, Polys1[Polys1[i].Neighboors[k]][1].y, Polys1[Polys1[i].Neighboors[k]][1].z,
+							Polys1[Polys1[i].Neighboors[k]][3].x, Polys1[Polys1[i].Neighboors[k]][3].y, Polys1[Polys1[i].Neighboors[k]][3].z,
+							R, G, B, 100)
+						end
+						for j = 1, #Polys1[i] do
+							if j == #Polys1[i] then
+								GRAPHICS.DRAW_LINE(Polys1[Polys1[i].Neighboors[k]][j].x,Polys1[Polys1[i].Neighboors[k]][j].y, Polys1[Polys1[i].Neighboors[k]][j].z,
+								Polys1[Polys1[i].Neighboors[k]][1].x, Polys1[Polys1[i].Neighboors[k]][1].y, Polys1[Polys1[i].Neighboors[k]][1].z, R, G, B, 150)
+							else
+								GRAPHICS.DRAW_LINE(Polys1[Polys1[i].Neighboors[k]][j].x,Polys1[Polys1[i].Neighboors[k]][j].y, Polys1[Polys1[i].Neighboors[k]][j].z,
+								Polys1[Polys1[i].Neighboors[k]][j+1].x,Polys1[Polys1[i].Neighboors[k]][j+1].y, Polys1[Polys1[i].Neighboors[k]][j+1].z, R, G, B, 150)
+							end
+						end
+						
 					end
 				end
 			end
@@ -1454,8 +1500,13 @@ menu.action(PolygonLoadOrSaveMenu, "Save Polys", {}, "", function(Toggle)
 		ToJSON[#ToJSON].Point = Polys1[k].Point
 		ToJSON[#ToJSON].JumpTo = Polys1[k].JumpTo or nil
 		ToJSON[#ToJSON].JumpedFrom = Polys1[k].JumpedFrom or nil
+		ToJSON[#ToJSON].Edges = Polys1[k].Edges
 	end
 	SaveJSONFile(filesystem.scripts_dir().."\\navs\\LastNav.json", ToJSON)
+end)
+
+menu.action(PolygonLoadOrSaveMenu, "Load Polys", {}, "", function(Toggle)
+	PlatformIDs = LoadNavmesh("LastNav.json", Polys1, true)
 end)
 
 menu.action(PolygonLoadOrSaveMenu, "Load Vehicle Polys", {}, "", function(Toggle)
@@ -2060,11 +2111,11 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 						if Peds[k].JumpDelay <= 0 then
 							if HitClimbableObject(Peds[k].Handle) then
 								TASK.TASK_CLIMB(Peds[k].Handle, false)
-								Peds[k].JumpDelay = 30
+								Peds[k].JumpDelay = 1000
 							end
 							if JumpPassThroughHole(Peds[k].Handle) then
 								TASK.TASK_CLIMB(Peds[k].Handle, true)
-								Peds[k].JumpDelay = 20
+								Peds[k].JumpDelay = 1000
 							end
 						else
 							Peds[k].JumpDelay = Peds[k].JumpDelay - 1
@@ -2136,8 +2187,12 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 											--Peds[k].SearchLowLevel = 1
 											--Print("Found path")
 											Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
-											Peds[k].ActualPath = AdjustTraveledPaths(Nodes, Polys1, Pos)--1
-											Print(Peds[k].ActualPath)
+											if Nodes ~= nil then
+												Peds[k].ActualPath = AdjustTraveledPaths(Nodes, Polys1, Pos)--1
+											else
+												Peds[k].ActualPath = 1
+											end
+											--Print(Peds[k].ActualPath)
 											Peds[k].TaskState = 1
 											Peds[k].StartIndexArg = nil
 											Peds[k].TargetIndexArg = nil
@@ -2197,11 +2252,21 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 											end
 										end
 										if Peds[k].Paths[Peds[k].ActualPath] ~= nil then
+											local Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
+											local NewV3 = v3.new(Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
+											local Sub = v3.sub(NewV3, Pos)
+											local Rot = Sub:toRot()
+											--ENTITY.SET_ENTITY_HEADING(Peds[k].Handle, Rot.z, 2)
+											Dir = Rot:toDir()
 											Peds[k].TaskCoords.x = Peds[k].Paths[Peds[k].ActualPath].x
 											Peds[k].TaskCoords.y = Peds[k].Paths[Peds[k].ActualPath].y
 											Peds[k].TaskCoords.z = Peds[k].Paths[Peds[k].ActualPath].z
+											Peds[k].TaskCoords2.x = Peds[k].Paths[Peds[k].ActualPath].x + Dir.x * 2.0
+											Peds[k].TaskCoords2.y = Peds[k].Paths[Peds[k].ActualPath].y + Dir.y * 2.0
+											Peds[k].TaskCoords2.z = Peds[k].Paths[Peds[k].ActualPath].z + Dir.z * 2.0
+											
 											if ENTITY.HAS_ENTITY_CLEAR_LOS_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 17) then
-												TASK.TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, Peds[k].Target, 2.0, true, 0.1, 0.1, false, 0, true, joaat("FIRING_PATTERN_FULL_AUTO"), -1)
+												TASK.TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY(Peds[k].Handle, Peds[k].TaskCoords2.x, Peds[k].TaskCoords2.y, Peds[k].TaskCoords2.z, Peds[k].Target, 2.0, true, 0.1, 0.1, false, 0, true, joaat("FIRING_PATTERN_FULL_AUTO"), -1)
 												PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
 												if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY")) ~= 7 then
 													Peds[k].TaskState = 2
@@ -5930,7 +5995,7 @@ menu.toggle(TestMenu, "New Optimize Path", {}, "", function(Toggle)
 	NewDrawAStar = Toggle
 	if NewDrawAStar then
 		local path, err = a_star(GetClosestPolygon(Polys1, StartPath, false, 1), GetClosestPolygon(Polys1, ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID()), false, 1), Polys1)
-		Print(type(path))
+		--Print(type(path))
 		local NewPath = {}
 		if path then
 			local LinesPath = {}
@@ -6008,7 +6073,7 @@ end
 function canConnectDirectly(p1, p2, polygons, indexes)
     -- Vamos dividir a linha entre p1 e p2 em pequenos segmentos
     local numSegments = math.floor(DistanceBetween(polygons[indexes[1]].Center.x, polygons[indexes[1]].Center.y, polygons[indexes[1]].Center.z,
-	polygons[indexes[#indexes]].Center.x, polygons[indexes[#indexes]].Center.y, polygons[indexes[#indexes]].Center.z)) * 10--50
+	polygons[indexes[#indexes]].Center.x, polygons[indexes[#indexes]].Center.y, polygons[indexes[#indexes]].Center.z)) * 2--50
 	
     for i = 0, numSegments do
         -- Interpolação linear entre p1 e p2 para criar um ponto intermediário
@@ -8194,13 +8259,13 @@ end
 
 
 -- Função para converter uma coordenada (X, Y, Z) em um índice de Grid
---function coordenadaParaIndiceGrid(x, y, z, tamanhoCelula)
---    local gridX = math.floor(x / tamanhoCelula)
---    local gridY = math.floor(y / tamanhoCelula)
---    local gridZ = math.floor(z / tamanhoCelula)
---
---    return gridX, gridY, gridZ  -- Retorna os índices do Grid correspondentes às coordenadas
---end
+function coordenadaParaIndiceGrid2(x, y, z, tamanhoCelula)
+    local gridX = math.floor(x / tamanhoCelula)
+    local gridY = math.floor(y / tamanhoCelula)
+    local gridZ = math.floor(z / tamanhoCelula)
+
+    return gridX, gridY, gridZ  -- Retorna os índices do Grid correspondentes às coordenadas
+end
 
 -- Função para converter uma coordenada (X, Y, Z) em um índice de grid, considerando uma origem
 function coordenadaParaIndiceGrid(x, y, z, origemX, origemY, origemZ, tamanhoCelula)
@@ -8217,7 +8282,7 @@ function armazenarPoligonosNoGrid(poligonos, tamanhoCelula)
     for indice, poligono in ipairs(poligonos) do
         for _, vertice in ipairs(poligono) do
             -- Converter a coordenada do vértice para o índice do Grid
-            local gridX, gridY, gridZ = coordenadaParaIndiceGrid(vertice.x, vertice.y, vertice.z, tamanhoCelula)
+            local gridX, gridY, gridZ = coordenadaParaIndiceGrid2(vertice.x, vertice.y, vertice.z, tamanhoCelula)
 
             -- Se a célula ainda não existir, cria a lista
             Grid[gridX] = Grid[gridX] or {}
@@ -8233,7 +8298,7 @@ end
 -- Função para buscar o índice de um polígono mais próximo pela coordenada
 function buscarPoligonoPorCoordenada(x, y, z, tamanhoCelula)
     -- Converter a coordenada para o índice do Grid
-    local gridX, gridY, gridZ = coordenadaParaIndiceGrid(x, y, z, tamanhoCelula)
+    local gridX, gridY, gridZ = coordenadaParaIndiceGrid2(x, y, z, tamanhoCelula)
 
     -- Verifica se a célula correspondente existe no Grid
     if Grid[gridX] and Grid[gridX][gridY] and Grid[gridX][gridY][gridZ] then
@@ -8524,7 +8589,7 @@ end
 -- Função para inicializar um grid estático baseado em uma área
 function inicializarGridEstatico(areaX, areaY, tamanhoCelula)
     local grid = {}
-
+	local LoopCount = 0
     -- Criar o grid com base em uma área fixa
     for x = -areaX, areaX, tamanhoCelula do
         for y = -areaY, areaY, tamanhoCelula do
@@ -8534,7 +8599,17 @@ function inicializarGridEstatico(areaX, areaY, tamanhoCelula)
             -- Inicializa a célula do grid
             grid[gridX] = grid[gridX] or {}
             grid[gridX][gridY] = {}
+			LoopCount = LoopCount + 1
+			if LoopCount > MaxLoopCount then
+				LoopCount = 0
+				Wait()
+			end
         end
+		LoopCount = LoopCount + 1
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
     end
 
     return grid
@@ -8550,6 +8625,7 @@ end
 
 -- Função para armazenar polígonos no grid em um cenário estático
 function armazenarPoligonosNoGridEstatico(grid, poligonos, tamanhoCelula, raioDeInfluencia)
+	local LoopCount = 0
     for indice, poligono in ipairs(poligonos) do
         for _, vertice in ipairs(poligono) do
             -- Encontrar a célula correspondente ao vértice
@@ -8573,8 +8649,23 @@ function armazenarPoligonosNoGridEstatico(grid, poligonos, tamanhoCelula, raioDe
                     -- Insere o índice do polígono na célula vizinha
                     table.insert(grid[vizinhoX][vizinhoY], indice)
                 end
+				LoopCount = LoopCount + 1
+				if LoopCount > MaxLoopCount then
+					LoopCount = 0
+					Wait()
+				end
             end
+			LoopCount = LoopCount + 1
+			if LoopCount > MaxLoopCount then
+				LoopCount = 0
+				Wait()
+			end
         end
+		LoopCount = LoopCount + 1
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
     end
 end
 
@@ -8670,4 +8761,304 @@ function AdjustTraveledPaths(Indexes, PolysT, Pos)
 		end
 	end
 	return Index
+end
+
+-- Função para criar um novo nó na kd-tree
+function novoKdNode(ponto, esquerda, direita)
+    return {ponto = ponto, esquerda = esquerda, direita = direita}
+end
+
+-- Função recursiva para construir a kd-tree
+function construirKdTree(pontos, profundidade)
+    if #pontos == 0 then
+        return nil
+    end
+
+    profundidade = profundidade or 0
+
+    -- Alterna entre as dimensões (x, y, z) com base na profundidade
+    local eixo = profundidade % 3 + 1
+
+    -- Ordena os pontos com base na dimensão atual
+    table.sort(pontos, function(a, b)
+        return a[eixo] < b[eixo]
+    end)
+
+    -- Achar o ponto do meio para dividir a árvore
+    local meio = math.floor(#pontos / 2) + 1
+
+    -- Criar o nó da kd-tree
+    return novoKdNode(
+        pontos[meio],  -- Ponto do meio
+        construirKdTree({table.unpack(pontos, 1, meio - 1)}, profundidade + 1),  -- Subárvore esquerda
+        construirKdTree({table.unpack(pontos, meio + 1, #pontos)}, profundidade + 1)  -- Subárvore direita
+    )
+end
+
+-- Função para calcular a distância euclidiana entre dois pontos
+function calcularDistancia2(ponto1, ponto2)
+    return math.sqrt((ponto1[1] - ponto2[1])^2 + (ponto1[2] - ponto2[2])^2 + (ponto1[3] - ponto2[3])^2)
+end
+
+-- Função para encontrar o polígono mais próximo em uma kd-tree
+function buscarVizinhoMaisProximo(kdNode, ponto, profundidade, melhorNo, melhorDistancia)
+    if kdNode == nil then
+        return melhorNo, melhorDistancia
+    end
+
+    profundidade = profundidade or 0
+    melhorNo = melhorNo or kdNode.ponto
+    melhorDistancia = melhorDistancia or calcularDistancia2(ponto, kdNode.ponto)
+
+    -- Alterna entre as dimensões (x, y, z) com base na profundidade
+    local eixo = profundidade % 3 + 1
+
+    -- Verificar a distância para o nó atual
+    local distanciaAtual = calcularDistancia2(ponto, kdNode.ponto)
+    if distanciaAtual < melhorDistancia then
+        melhorNo = kdNode.ponto
+        melhorDistancia = distanciaAtual
+    end
+
+    -- Determina qual ramo da kd-tree deve ser verificado
+    local proximoRamo, outroRamo
+    if ponto[eixo] < kdNode.ponto[eixo] then
+        proximoRamo = kdNode.esquerda
+        outroRamo = kdNode.direita
+    else
+        proximoRamo = kdNode.direita
+        outroRamo = kdNode.esquerda
+    end
+
+    -- Explorar o ramo mais próximo primeiro
+    melhorNo, melhorDistancia = buscarVizinhoMaisProximo(proximoRamo, ponto, profundidade + 1, melhorNo, melhorDistancia)
+
+    -- Explorar o outro ramo se for possível encontrar algo mais próximo
+    if math.abs(ponto[eixo] - kdNode.ponto[eixo]) < melhorDistancia then
+        melhorNo, melhorDistancia = buscarVizinhoMaisProximo(outroRamo, ponto, profundidade + 1, melhorNo, melhorDistancia)
+    end
+
+    return melhorNo, melhorDistancia
+end
+
+-- Função recursiva para encontrar os k vizinhos mais próximos em uma kd-tree
+function buscarVizinhosMaisProximos(kdNode, ponto, k, profundidade, melhorNos)
+    if kdNode == nil then
+        return melhorNos
+    end
+
+    profundidade = profundidade or 0
+    melhorNos = melhorNos or {}  -- Inicializar melhorNos como uma tabela vazia na primeira chamada
+
+    -- Alterna entre as dimensões (x, y, z) com base na profundidade
+    local eixo = profundidade % 3 + 1
+
+    -- Verificar a distância para o nó atual
+    local distanciaAtual = calcularDistancia2(ponto, kdNode.ponto)
+    
+    -- Inserir o nó atual na lista de melhores vizinhos
+    if #melhorNos < k then
+        table.insert(melhorNos, {ponto = kdNode.ponto, distancia = distanciaAtual})
+    else
+        -- Substituir o vizinho mais distante se o atual for mais próximo
+        table.sort(melhorNos, function(a, b) return a.distancia < b.distancia end)
+        if distanciaAtual < melhorNos[#melhorNos].distancia then
+            melhorNos[#melhorNos] = {ponto = kdNode.ponto, distancia = distanciaAtual}
+        end
+    end
+
+    -- Determina qual ramo da kd-tree deve ser verificado
+    local proximoRamo, outroRamo
+    if ponto[eixo] < kdNode.ponto[eixo] then
+        proximoRamo = kdNode.esquerda
+        outroRamo = kdNode.direita
+    else
+        proximoRamo = kdNode.direita
+        outroRamo = kdNode.esquerda
+    end
+
+    -- Explorar o ramo mais próximo primeiro
+    melhorNos = buscarVizinhosMaisProximos(proximoRamo, ponto, k, profundidade + 1, melhorNos)
+
+    -- Explorar o outro ramo se for possível encontrar algo mais próximo
+    if math.abs(ponto[eixo] - kdNode.ponto[eixo]) < melhorNos[#melhorNos].distancia then
+        melhorNos = buscarVizinhosMaisProximos(outroRamo, ponto, k, profundidade + 1, melhorNos)
+    end
+
+    return melhorNos
+end
+
+
+
+-- Função para calcular e armazenar os vizinhos mais próximos de cada polígono usando kd-tree
+function calcularVizinhosParaTodosOsPoligonos(poligonos, kdTree, k)
+    local vizinhosPorPoligono = {}
+
+    for i, poligono in ipairs(poligonos) do
+        -- Encontra os k vizinhos mais próximos para o polígono atual
+        local pontoCentro = poligono  -- Considerando que `poligono` é representado pelo ponto central
+        local vizinhos = buscarVizinhosMaisProximos(kdTree, pontoCentro, k)
+
+        -- Armazena os índices dos vizinhos encontrados
+        vizinhosPorPoligono[i] = {}
+        for _, vizinho in ipairs(vizinhos) do
+            -- Acha o índice do vizinho com base no ponto encontrado
+            for j, p in ipairs(poligonos) do
+                if p == vizinho.ponto then
+                    table.insert(vizinhosPorPoligono[i], j)
+                    break
+                end
+            end
+        end
+    end
+
+    return vizinhosPorPoligono  -- Retorna uma tabela com os vizinhos para cada polígono
+end
+
+function verificarVizinhosComProximidadeERaycast(ponto1, ponto2, distanciaMaxima)
+    -- Calcular a distância entre os dois pontos (centros dos polígonos)
+    local distancia = calcularDistancia2(ponto1, ponto2)
+    
+    -- Se a distância for maior que a máxima permitida, não são vizinhos
+    if distancia > distanciaMaxima then
+        return false
+    end
+
+    -- Usar Raycast para verificar se há um obstáculo entre os dois pontos
+    --local handle = StartShapeTestRay(ponto1[1], ponto1[2], ponto1[3], ponto2[1], ponto2[2], ponto2[3], -1, 0, 7)
+    --local _, hit, _, _, _ = GetShapeTestResult(handle)
+	local hit = ShapeTestNav(0, {x = ponto1[1], y = ponto1[2], z = ponto1[3]}, {x = ponto2[1], y = ponto2[2], z = ponto2[3]}, 83)
+    -- Se o Raycast detectar uma colisão (hit == 1), então há uma obstrução, logo não são vizinhos
+    if hit then
+        return false
+    end
+
+    return true  -- Se a distância for válida e não houver obstrução, são vizinhos
+end
+
+-- Função para comparar dois vértices com uma tolerância para evitar problemas de precisão
+function verticesSaoIguais(vertice1, vertice2, tolerancia)
+    tolerancia = tolerancia or 0.001  -- Defina a tolerância para evitar problemas de precisão
+    return math.abs(vertice1.x - vertice2.x) <= tolerancia and
+           math.abs(vertice1.y - vertice2.y) <= tolerancia and
+           math.abs(vertice1.z - vertice2.z) <= tolerancia
+end
+
+-- Função para verificar se dois polígonos compartilham vértices com uma tolerância
+function verificarVizinhosPorVertices(poligono1, poligono2, tolerancia)
+    for _, vertice1 in ipairs(poligono1) do
+        for _, vertice2 in ipairs(poligono2) do
+            if verticesSaoIguais(vertice1, vertice2, tolerancia) then
+                return true  -- São vizinhos, compartilham pelo menos um vértice
+            end
+        end
+    end
+    return false  -- Não compartilham vértices, não são vizinhos
+end
+
+
+
+-- Função para verificar se dois polígonos são vizinhos com uma tolerância para vértices e sem Raycast
+function verificarVizinhosSemRaycast(poligono1, poligono2, distanciaMaxima, tolerancia)
+    local ponto1 = {poligono1.Center.x, poligono1.Center.y, poligono1.Center.z}
+    local ponto2 = {poligono2.Center.x, poligono2.Center.y, poligono2.Center.z}
+    
+    -- Verificar se a distância é menor que a distância máxima
+    if calcularDistancia2(ponto1, ponto2) <= distanciaMaxima then
+        -- Verificar se compartilham vértices
+        if verificarVizinhosPorVertices(poligono1, poligono2, tolerancia) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Função principal para calcular vizinhos
+function calcularVizinhosParaPoligonosComVerticesSemRaycast(poligonos, kdTree, k, distanciaMaxima, tolerancia)
+    local vizinhosPorPoligono = {}
+	local LoopCount = 0
+    for i, poligono in ipairs(poligonos) do
+        local pontoCentro = {poligono.Center.x, poligono.Center.y, poligono.Center.z}
+        local vizinhos = buscarVizinhosMaisProximos(kdTree, pontoCentro, k)
+        vizinhosPorPoligono[i] = {}
+
+        for _, vizinho in ipairs(vizinhos) do
+            local vizinhoIndex = nil
+            for j, poligonoVizinho in ipairs(poligonos) do
+                local pontoVizinho = {poligonoVizinho.Center.x, poligonoVizinho.Center.y, poligonoVizinho.Center.z}
+                if pontoVizinho[1] == vizinho.ponto[1] and pontoVizinho[2] == vizinho.ponto[2] and pontoVizinho[3] == vizinho.ponto[3] then
+                    vizinhoIndex = poligonoVizinho.ID--j
+                    break
+                end
+            end
+
+            -- Evitar que o polígono considere a si mesmo como vizinho
+            if vizinhoIndex and vizinhoIndex ~= i then
+                -- Verificar se são vizinhos com base em vértices e proximidade (sem Raycast)
+                if verificarVizinhosSemRaycast(poligono, poligonos[vizinhoIndex], distanciaMaxima, tolerancia) then
+                    table.insert(vizinhosPorPoligono[i], vizinhoIndex)
+                end
+            end
+			LoopCount = LoopCount + 1
+			if LoopCount > MaxLoopCount then
+				LoopCount = 0
+				Wait()
+			end
+        end
+		LoopCount = LoopCount + 1
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+    end
+
+    return vizinhosPorPoligono
+end
+
+-- Função para calcular vizinhos com limite de distância
+function verificarVizinhosComDistanciaMaxima(ponto1, ponto2, distanciaMaxima)
+    local distancia = calcularDistancia2(ponto1, ponto2)
+    return distancia <= distanciaMaxima
+end
+
+-- Função principal para calcular vizinhos considerando a distância máxima
+function calcularVizinhosParaPoligonosComDistanciaMaxima(poligonos, kdTree, k, distanciaMaxima, tolerancia)
+    local vizinhosPorPoligono = {}
+	local LoopCount = 0
+    for i, poligono in ipairs(poligonos) do
+        local pontoCentro = {poligono.Center.x, poligono.Center.y, poligono.Center.z}
+        local vizinhos = buscarVizinhosMaisProximos(kdTree, pontoCentro, k)
+        vizinhosPorPoligono[i] = {}
+
+        for _, vizinho in ipairs(vizinhos) do
+            local vizinhoIndex = nil
+            for j, poligonoVizinho in ipairs(poligonos) do
+                local pontoVizinho = {poligonoVizinho.Center.x, poligonoVizinho.Center.y, poligonoVizinho.Center.z}
+                if pontoVizinho[1] == vizinho.ponto[1] and pontoVizinho[2] == vizinho.ponto[2] and pontoVizinho[3] == vizinho.ponto[3] then
+                    vizinhoIndex = j
+                    break
+                end
+            end
+
+            -- Evitar que o polígono considere a si mesmo como vizinho
+            if vizinhoIndex and vizinhoIndex ~= i then
+                -- Verificar se a distância entre os polígonos é menor que a distância máxima
+                if verificarVizinhosComDistanciaMaxima(pontoCentro, vizinho.ponto, distanciaMaxima) then
+                    table.insert(vizinhosPorPoligono[i], vizinhoIndex)
+                end
+            end
+			LoopCount = LoopCount + 1
+			if LoopCount > MaxLoopCount then
+				LoopCount = 0
+				Wait()
+			end
+        end
+		LoopCount = LoopCount + 1
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+    end
+
+    return vizinhosPorPoligono
 end
