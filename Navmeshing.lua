@@ -8,6 +8,8 @@ json = require "json"
 
 local MaxLoopCount = 1000
 
+local GlobalRaycastFlags = 83
+
 local FlagBitNames = {
 	Jump = 1,
 	UsePoint = 2,
@@ -89,6 +91,11 @@ function LoadNavmesh(File, TableTarget, LoadAll)
 				T[#T].Neighboors = Contents[k].Neighboors
 				T[#T].Center = Contents[k].Center
 				T[#T].ID = #T
+				if T[#T].LinkedIDs ~= nil then
+					for k = 1, #T[#T].LinkedIDs do
+						T[#T].Neighboors[#T[#T].Neighboors+1] = T[#T].LinkedIDs[k]
+					end
+				end
 			end
 			ContentsIT = ContentsIT + 1
 			if ContentsIT > 10 then
@@ -251,7 +258,7 @@ function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations)
 				--Wait()
 			end
 		elseif UseNewNeighborCalc == 1 then
-			conectarVizinhosComRaycast(T, 1.0)
+			conectarVizinhosComRaycast(T, 0.1)
 		elseif UseNewNeighborCalc == 2 then
 			-- Construir a kd-tree a partir dos polígonos
 			local PolygonsNewIDs = {}
@@ -316,6 +323,7 @@ local ShowNavPoints = false
 menu.toggle(DrawFunctionsMenu, "Draw Polys", {}, "", function(Toggle)
 	ShowNavPoints = Toggle
 	if ShowNavPoints then
+		local LoopCount = 0
 		while ShowNavPoints do
 			GRAPHICS.SET_BACKFACECULLING(false)
 			local Pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
@@ -380,6 +388,11 @@ menu.toggle(DrawFunctionsMenu, "Draw Polys", {}, "", function(Toggle)
 					end
 					--GRAPHICS.DRAW_MARKER(28, Polys1[i].Center.x,
 					--Polys1[i].Center.y, Polys1[i].Center.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 150, 0, 0, 100, 0, false, 2, false, 0, 0, false)
+				end
+				LoopCount = LoopCount + 1
+				if LoopCount > 9000 then
+					LoopCount = 0
+					Wait()
 				end
 			end
 			Wait()
@@ -1860,7 +1873,7 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 			local Pos = ENTITY.GET_ENTITY_COORDS(NavHandle2)
 			local PlayerPos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
 			if FoundIndex == 0 then
-				FoundPaths, InPolyIndex, TargetPolyIndex, InsideStartPolygon, TargetInsideTargetPolygon = AStarPathFind(Pos, PlayerPos, 1, false, nil, nil, true, nil, nil, true, true)
+				FoundPaths, InPolyIndex, TargetPolyIndex, InsideStartPolygon, TargetInsideTargetPolygon = AStarPathFind(Pos, PlayerPos, 1, false, nil, nil, nil, nil, nil, nil, nil)
 				if FoundPaths ~= nil then
 					FoundIndex = 2
 					Print(#FoundPaths)
@@ -2484,13 +2497,13 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 											Peds[k].ActualPath = Peds[k].ActualPath + 1
 											Peds[k].TaskState = 1
 										end
-										--if Peds[k].SearchState == 2 then
-										--	Peds[k].SearchState = 0
-										--end
+										if Peds[k].SearchState == 2 then
+											Peds[k].SearchState = 0
+										end
 									end
 								end
 								--Distance2 > Peds[k].LastDistance then
-								if Peds[k].SameDistanceTick > 100 or math.floor(Distance2) > math.floor(Peds[k].LastDistance) then
+								if Peds[k].SameDistanceTick > 50 or math.floor(Distance2) > math.floor(Peds[k].LastDistance) then
 									--Peds[k].TaskState = 1
 									--Peds[k].ActualPath = Peds[k].ActualPath + 1
 									--if Peds[k].ActualPath > #Peds[k].Paths then
@@ -2720,7 +2733,7 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 				PED.SET_RELATIONSHIP_BETWEEN_GROUPS(5, AiTeam1Hash, AiTeam2Hash)
 				PED.SET_RELATIONSHIP_BETWEEN_GROUPS(5, AiTeam2Hash, AiTeam1Hash)
 			end
-			if #Peds < 50 then
+			if #Peds < 80 then
 				--for index, peds in pairs(entities.get_all_peds_as_handles()) do
 					--local EntScript = ENTITY.GET_ENTITY_SCRIPT(peds, 0)
 					--if EntScript ~= nil then
@@ -2735,8 +2748,9 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 			end
 			for k = 1, 50 do
 				if Peds[k] == nil then
-					if NetID ~= 0 then
-						local NetID = memory.read_int(memory.script_local("fm_mission_controller", 22960+834+k))
+					local Addr = memory.script_local("fm_mission_controller", 22960+834+k)
+					if Addr ~= 0 then
+						local NetID = memory.read_int(Addr)
 						if NetID ~= 0 then
 							local PedHandle = 0
 							util.spoof_script("fm_mission_controller", function()
@@ -3629,8 +3643,8 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPoly
 	end
 	local Nodes2 = {}
 	local NodeIDs = {}
-	local AddNodes = false
-	for k = 2, #Nodes do
+	local AddNodes = true
+	for k = 1, #Nodes do
 		--local ClosestPoint = closest_point_on_polygon(Polys1[Nodes[k]], Target)
 		--Nodes2[#Nodes2+1] = ClosestPoint
 		Nodes2[#Nodes2+1] = PolysT[Nodes[k]].Center
@@ -3645,9 +3659,10 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPoly
 		end
 	end
 	if not FinalNode then
+		table.remove(Nodes2, #Nodes2)
 		Nodes2[#Nodes2+1] = Target
 	end
-	table.remove(Nodes, 1)
+	--table.remove(Nodes, 1)
 	local NewPaths = smoothPath(Nodes2, PolysT, Nodes)
 	return NewPaths, StartIndex, TargetIndex, InsideStartPolygon, TargetInsideTargetPolygon, Nodes
 end
@@ -4057,7 +4072,6 @@ function GetOffsetFromEntityInWorldCoords(entity, offX, offY, offZ)
 end
 
 function GetRotationMatrix(rot)
-    --local rot = ENTITY.GET_ENTITY_ROTATION(element, 2) -- ZXY
     local rx, ry, rz = rot.x, rot.y, rot.z
     rx, ry, rz = math.rad(rx), math.rad(ry), math.rad(rz)
     local matrix = {}
@@ -4885,6 +4899,42 @@ function RaycastFromCamera(PlayerPed, Distance, Flags)
 	local CamRot = CAM.GET_GAMEPLAY_CAM_ROT(2)
 	local FVect = CamRot:toDir()
 	local PPos = CAM.GET_GAMEPLAY_CAM_COORD()
+	local AdjustedX = PPos.x + FVect.x * Distance
+	local AdjustedY = PPos.y + FVect.y * Distance
+	local AdjustedZ = PPos.z + FVect.z * Distance
+	local DidHit = memory.alloc(1)
+	local EndCoords = v3.new()
+	local Normal = v3.new()
+	local HitEntity = memory.alloc_int()
+	
+	local Handle = SHAPETEST.START_EXPENSIVE_SYNCHRONOUS_SHAPE_TEST_LOS_PROBE(
+		PPos.x, PPos.y, PPos.z,
+		AdjustedX, AdjustedY, AdjustedZ,
+		FlagBits,
+		PlayerPed, 7
+	)
+	SHAPETEST.GET_SHAPE_TEST_RESULT(Handle, DidHit, EndCoords, Normal, HitEntity)
+	if memory.read_byte(DidHit) ~= 0 then
+		HitCoords.x = EndCoords.x
+		HitCoords.y = EndCoords.y
+		HitCoords.z = EndCoords.z
+	else
+		HitCoords.x = AdjustedX
+		HitCoords.y = AdjustedY
+		HitCoords.z = AdjustedZ
+	end
+	return HitCoords, memory.read_byte(DidHit) ~= 0, memory.read_int(HitEntity)
+end
+
+function RaycastFromCamHandle(Cam, PlayerPed, Distance, Flags)
+	local FlagBits = -1
+	if Flags ~= nil then
+		FlagBits = Flags
+	end
+	local HitCoords = v3.new()
+	local CamRot = CAM.GET_CAM_ROT(Cam, 2)
+	local FVect = CamRot:toDir()
+	local PPos = CAM.GET_CAM_COORD(Cam)
 	local AdjustedX = PPos.x + FVect.x * Distance
 	local AdjustedY = PPos.y + FVect.y * Distance
 	local AdjustedZ = PPos.z + FVect.z * Distance
@@ -6069,38 +6119,41 @@ function isPointInPolygon(point, polygon)
     return oddNodes
 end
 
--- Função para verificar se a linha entre dois pontos passa por dentro de algum polígono
+-- Função para verificar se a linha entre dois pontos passa por dentro de algum polígono e retorna a última coordenada válida
 function canConnectDirectly(p1, p2, polygons, indexes)
     -- Vamos dividir a linha entre p1 e p2 em pequenos segmentos
     local numSegments = math.floor(DistanceBetween(polygons[indexes[1]].Center.x, polygons[indexes[1]].Center.y, polygons[indexes[1]].Center.z,
-	polygons[indexes[#indexes]].Center.x, polygons[indexes[#indexes]].Center.y, polygons[indexes[#indexes]].Center.z)) * 2--50
-	
+	polygons[indexes[#indexes]].Center.x, polygons[indexes[#indexes]].Center.y, polygons[indexes[#indexes]].Center.z)) * 1--50
+    local lastValidPoint = nil
+
     for i = 0, numSegments do
         -- Interpolação linear entre p1 e p2 para criar um ponto intermediário
         local t = i / numSegments
         local intermediatePoint = {
             x = p1.x * (1 - t) + p2.x * t,
-            y = p1.y * (1 - t) + p2.y * t,
-            z = p1.z * (1 - t) + p2.z * t
+            y = p1.y * (1 - t) + p2.y * t
         }
+
         -- Verificar se esse ponto intermediário está dentro de algum polígono
         local insideAnyPolygon = false
-		for k = 1, #indexes do
+        for k = 1, #indexes do
         --for _, polygon in ipairs(polygons) do
-			local polygon = polygons[indexes[k]]
+            local polygon = polygons[indexes[k]]
             if isPointInPolygon(intermediatePoint, polygon) then
                 insideAnyPolygon = true
+                lastValidPoint = intermediatePoint -- Atualiza o último ponto válido
                 break
             end
         end
+
         -- Se algum ponto intermediário não estiver dentro de nenhum polígono, há uma obstrução
         if not insideAnyPolygon then
-            return false
+            return false, lastValidPoint
         end
     end
 
-    -- Se todos os pontos intermediários estiverem dentro de polígonos, os pontos podem ser conectados
-    return true
+    -- Se todos os pontos intermediários estiverem dentro de polígonos, retorna o último ponto
+    return true, p2
 end
 
 
@@ -6112,14 +6165,21 @@ function smoothPath(path, polygons, indexes)
     -- Adiciona o primeiro ponto no caminho suavizado
     table.insert(smoothedPath, path[i])
 
-	while i < #path do
+    -- Variável para armazenar a última coordenada válida retornada pela canConnectDirectly
+    local lastValidPoint = path[i]
+
+    -- Itera sobre os pontos do caminho
+    while i < #path do
         local j = i + 1
         local found = false
+        local newPoint = nil
 
         -- Encontra o ponto mais distante que pode ser conectado diretamente
         while j <= #path do
-            if canConnectDirectly(path[i], path[j], polygons, indexes) then
+            local canConnect, lastPoint = canConnectDirectly(lastValidPoint, path[j], polygons, indexes)
+            if canConnect then
                 found = true
+                newPoint = lastPoint -- Atualiza o novo ponto de partida para a próxima iteração
                 j = j + 1
             else
                 break
@@ -6127,13 +6187,16 @@ function smoothPath(path, polygons, indexes)
         end
 
         -- Se `j-1` puder ser conectado diretamente, adicionamos o ponto ao caminho suavizado
-        if found then
-            table.insert(smoothedPath, path[j - 1])
+        if found and newPoint then
+            table.insert(smoothedPath, newPoint)
         else
             -- Caso contrário, mova para o próximo ponto imediatamente
             j = i + 1
             table.insert(smoothedPath, path[j])
         end
+
+        -- Atualiza a última coordenada válida
+        lastValidPoint = smoothedPath[#smoothedPath]
 
         -- Certifique-se de avançar o índice `i`
         i = j
@@ -6141,6 +6204,7 @@ function smoothPath(path, polygons, indexes)
 
     return smoothedPath
 end
+
 
 function SplitGlobals(GlobalString)
 	local String = GlobalString
@@ -7581,7 +7645,7 @@ function escanearAreaParaNavmesh(centro, raio, passo)
             -- Tenta encontrar o chão para a coordenada atual
 			local groundZ = memory.alloc(8)
             local found, hitcoord = 
-			ShapeTestNav(0, {x = coordX, y = coordY, z = coordZ}, {x = coordX, y = coordY, z = coordZ - 100.0}, 83)
+			ShapeTestNav(0, {x = coordX, y = coordY, z = coordZ}, {x = coordX, y = coordY, z = coordZ - 100.0}, GlobalRaycastFlags)
 			--MISC.GET_GROUND_Z_FOR_3D_COORD(coordX, coordY, coordZ, groundZ, 0)
 
             -- Se encontrar um chão, adiciona o ponto à lista de pontos válidos
@@ -7600,25 +7664,29 @@ function gerarPoligonosAPartirDosPontos(pontos, passo)
     local poligonos = {}
     local LoopCount = 0
     -- Organizar os pontos em uma matriz bidimensional para garantir que formem uma grade
-    local Grid = {}
-    for _, ponto in ipairs(pontos) do
+    local Grid2 = {}
+	local i = 1
+	while i <= #pontos do
+		local ponto = pontos[i]
         local gridX = math.floor(ponto.x / passo)
         local gridY = math.floor(ponto.y / passo)
-        Grid[gridX] = Grid[gridX] or {}
-        Grid[gridX][gridY] = ponto
+        Grid2[gridX] = Grid2[gridX] or {}
+        Grid2[gridX][gridY] = ponto
 		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 		if LoopCount > MaxLoopCount then
 			LoopCount = 0
 			Wait()
 		end
+		i = i + 1
     end
     
     -- Percorre a grade para formar polígonos (quadrados) com quatro pontos adjacentes
-    for x, coluna in pairs(Grid) do
+    for x, coluna in pairs(Grid2) do
         for y, p1 in pairs(coluna) do
-            local p2 = Grid[x + 1] and Grid[x + 1][y]
-            local p3 = Grid[x] and Grid[x][y + 1]
-            local p4 = Grid[x + 1] and Grid[x + 1][y + 1]
+            local p2 = Grid2[x + 1] and Grid2[x + 1][y]
+            local p3 = Grid2[x] and Grid2[x][y + 1]
+            local p4 = Grid2[x + 1] and Grid2[x + 1][y + 1]
 
             -- Se todos os quatro pontos existirem, formamos um quadrado
             if p1 and p2 and p3 and p4 then
@@ -7629,12 +7697,14 @@ function gerarPoligonosAPartirDosPontos(pontos, passo)
 				--table.insert(poligonos, p4)
             end
 			LoopCount = LoopCount + 1
+			directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 			if LoopCount > MaxLoopCount then
 				LoopCount = 0
 				Wait()
 			end
         end
 		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 		if LoopCount > MaxLoopCount then
 			LoopCount = 0
 			Wait()
@@ -7644,6 +7714,37 @@ function gerarPoligonosAPartirDosPontos(pontos, passo)
     return poligonos  -- Retorna a lista de polígonos gerados
 end
 
+-- Função para gerar polígonos a partir de pontos rotacionados, considerando uma tolerância de alinhamento
+function gerarPoligonosAPartirDosPontosComRotacao(pontos, passo, tolerancia)
+    local poligonos = {}
+
+    -- Organizar os pontos em uma matriz bidimensional (grid) para garantir que formem uma grade
+    local grid = {}
+    for _, ponto in ipairs(pontos) do
+        -- Usar uma tolerância para ajustar o ponto ao grid
+        local gridX = math.floor((ponto.x + tolerancia) / passo)
+        local gridY = math.floor((ponto.y + tolerancia) / passo)
+
+        grid[gridX] = grid[gridX] or {}
+        grid[gridX][gridY] = ponto
+    end
+
+    -- Percorrer a grade para formar polígonos (quadrados) com quatro pontos adjacentes
+    for x, coluna in pairs(grid) do
+        for y, p1 in pairs(coluna) do
+            local p2 = grid[x + 1] and grid[x + 1][y]
+            local p3 = grid[x] and grid[x][y + 1]
+            local p4 = grid[x + 1] and grid[x + 1][y + 1]
+
+            -- Se todos os quatro pontos existirem, formar um quadrado
+            if p1 and p2 and p3 and p4 then
+                table.insert(poligonos, {p1, p2, p4, p3})  -- Forma o quadrado no sentido anti-horário
+            end
+        end
+    end
+
+    return poligonos  -- Retorna a lista de polígonos gerados
+end
 
 -- Função para conectar polígonos adjacentes
 function conectarPoligonos(poligonos)
@@ -7743,7 +7844,10 @@ end
 function filtrarPoligonosPorInclinacao(poligonos, anguloMaximo)
     local poligonosValidos = {}
 
-    for _, poligono in ipairs(poligonos) do
+	local LoopCount = 0
+	local i = 1
+	while i <= #poligonos do
+		local poligono = poligonos[i]
         -- Considera os três primeiros vértices do polígono para calcular o vetor normal
         local p1, p2, p3 = poligono[1], poligono[2], poligono[3]
 
@@ -7757,6 +7861,13 @@ function filtrarPoligonosPorInclinacao(poligonos, anguloMaximo)
         if angulo <= anguloMaximo then
             table.insert(poligonosValidos, poligono)
         end
+		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+		i = i + 1
     end
 
     return poligonosValidos  -- Retorna os polígonos que passaram no filtro de inclinação
@@ -7772,8 +7883,10 @@ end
 -- Função para filtrar polígonos com base na variação de altura
 function filtrarPoligonosPorAltura(poligonos, alturaMaxima)
     local poligonosValidos = {}
-
-    for _, poligono in ipairs(poligonos) do
+	local LoopCount = 0
+	local i = 1
+	while i <= #poligonos do
+		local poligono = poligonos[i]
         local p1, p2, p3, p4 = poligono[1], poligono[2], poligono[3], poligono[4]
 
         -- Verifica a variação de altura dos vértices
@@ -7783,6 +7896,13 @@ function filtrarPoligonosPorAltura(poligonos, alturaMaxima)
         if variacaoAltura <= alturaMaxima then
             table.insert(poligonosValidos, poligono)
         end
+		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+		i = i + 1
     end
 
     return poligonosValidos  -- Retorna os polígonos que passaram no filtro de altura
@@ -7901,8 +8021,10 @@ end
 -- Função para verificar se um polígono tem vértices desalinhados (uma vértice muito abaixo dos outros)
 function filtrarPoligonosComVerticesDesalinhados(poligonos, limiteDesalinhamento)
     local poligonosValidos = {}
-
-    for _, poligono in ipairs(poligonos) do
+	local LoopCount = 0
+	local i = 1
+	while i <= #poligonos do
+		local poligono = poligonos[i]
         local somaZ = 0
         local numVertices = #poligono
 
@@ -7927,6 +8049,14 @@ function filtrarPoligonosComVerticesDesalinhados(poligonos, limiteDesalinhamento
         if not desalinhado then
             table.insert(poligonosValidos, poligono)
         end
+	
+		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+		i = i + 1
     end
 
     return poligonosValidos  -- Retorna os polígonos que passaram no filtro
@@ -8115,11 +8245,17 @@ end
 function filtrarPoligonosDuplicados(poligonos, tolerancia)
     local poligonosFiltrados = {}
 	local LoopCount = 0
-    for i, poligonoAtual in ipairs(poligonos) do
+	local i = 1
+	while i <= #poligonos do
+		local poligonoAtual = poligonos[i]
         local duplicado = false
 
+		directx.draw_text(0.7, 0.30, "Filtering duped polygons. Stage "..i , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		local y = 1
+		while y <= #poligonosFiltrados do
+			directx.draw_text(0.7, 0.35, "Filtering duped polygons. Stage "..y , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
         -- Verifica se o polígono atual já foi registrado como duplicado
-        for _, poligonoFiltrado in ipairs(poligonosFiltrados) do
+			local poligonoFiltrado = poligonosFiltrados[y]
             if poligonosIguais(poligonoAtual, poligonoFiltrado, tolerancia) then
                 duplicado = true
                 break
@@ -8129,6 +8265,7 @@ function filtrarPoligonosDuplicados(poligonos, tolerancia)
 				LoopCount = 0
 				Wait()
 			end
+			y = y + 1
         end
 
         -- Se o polígono não for duplicado, adiciona à lista filtrada
@@ -8140,6 +8277,7 @@ function filtrarPoligonosDuplicados(poligonos, tolerancia)
 			LoopCount = 0
 			Wait()
 		end
+		i = i + 1
     end
 
     return poligonosFiltrados  -- Retorna a lista de polígonos filtrados (sem duplicatas)
@@ -8174,25 +8312,35 @@ end
 -- Função para fazer um Raycast e verificar se há colisão válida
 function verificarColisaoRaycast(origem, direcao, distancia)
 	local hit, hitPos = ShapeTestNav(0, {x = origem.x, y = origem.y, z = origem.z},
-	{x = origem.x + direcao.x * distancia, y = origem.y + direcao.y * distancia, z = origem.z + direcao.z * distancia}, 83)
+	{x = origem.x + direcao.x * distancia, y = origem.y + direcao.y * distancia, z = origem.z + direcao.z * distancia}, GlobalRaycastFlags)
     -- Retorna se houve colisão e a posição do impacto
     return hit, hitPos
 end
 
+
 -- Função para escanear a área e usar Raycast para verificar a acessibilidade dos pontos
-function escanearAreaParaNavmeshComRaycast(centro, raio, passo, alturaRaycast, distanciaRaycast)
+function escanearAreaParaNavmeshComRaycast(centro, raio, passo, alturaRaycast, distanciaRaycast, RegPoints)
     local pontosValidos = {}
 	local LoopCount = 0
+	local x = -raio
     -- Percorre a área em um Grid
-    for x = -raio, raio, passo do
-        for y = -raio, raio, passo do
+	while x <= raio do
+		local y = -raio
+		while y <= raio do
             local coordX = centro.x + x
             local coordY = centro.y + y
             local coordZ = centro.z
-
+			
+			directx.draw_text(0.7, 0.30, "Area X: "..x.." Area Y: "..y , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			--if angle then
+			--	local NewPoint = rotacionarPonto({x = coordX, y = coordY, z = coordZ}, centro, angle or 0)
+			--	coordX = NewPoint.x
+            --	coordY = NewPoint.y
+            --	coordZ = NewPoint.z
+			--end
             -- Tenta encontrar o chão para a coordenada atual
             --local _, groundZ = GetGroundZFor_3dCoord(coordX, coordY, coordZ, 0)
-			local found, hitcoord = ShapeTestNav(0, {x = coordX, y = coordY, z = coordZ}, {x = coordX, y = coordY, z = coordZ - 100.0}, 83)
+			local found, hitcoord = ShapeTestNav(0, {x = coordX, y = coordY, z = coordZ}, {x = coordX, y = coordY, z = coordZ - 100.0}, GlobalRaycastFlags)
             -- Se encontrar o chão, faz um Raycast para verificar a acessibilidade
             if found then
                 local origem = v3.new(coordX, coordY, coordZ + alturaRaycast)
@@ -8201,24 +8349,74 @@ function escanearAreaParaNavmeshComRaycast(centro, raio, passo, alturaRaycast, d
 
                 -- Apenas adiciona o ponto se o Raycast encontrar uma colisão válida
                 if colisaoValida then
-                    table.insert(pontosValidos, {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5})
+					local chave = math.floor(hitPos.x) .. "," .. math.floor(hitPos.y) .. "," .. math.floor(hitPos.z)
+					if RegPoints[chave] == nil then
+						-- Registrar o ponto e adicionar à lista de pontos válidos
+						RegPoints[chave] = true
+                    	table.insert(pontosValidos, {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5})
+					end
                 end
             end
 			LoopCount = LoopCount + 1
+			directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 			if LoopCount > MaxLoopCount then
 				LoopCount = 0
 				Wait()
 			end
+			y = y + passo
         end
 		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 		if LoopCount > MaxLoopCount then
 			LoopCount = 0
 			Wait()
 		end
+		x = x + passo
     end
 
     return pontosValidos  -- Retorna os pontos válidos após verificar com Raycast
 end
+
+-- Função adaptada para escanear uma área angular com Raycast
+function escanearAreaParaNavmeshComRaycastComRotacao(centro, raio, passo, alturaRaycast, distanciaRaycast, angulo)
+    local pontosValidos = {}
+
+    -- Percorre a área em um grid rotacionado
+    for x = -raio, raio, passo do
+        for y = -raio, raio, passo do
+            -- Definir o ponto original (antes da rotação)
+            local pontoOriginal = {x = centro.x + x, y = centro.y + y, z = centro.z}
+
+            -- Aplicar a rotação ao ponto
+            local pontoRotacionado = rotacionarPonto2(pontoOriginal, centro, angulo)
+
+            -- Tenta encontrar o chão para a coordenada rotacionada
+           -- local _, groundZ = GetGroundZFor_3dCoord(pontoRotacionado.x, pontoRotacionado.y, pontoRotacionado.z, 0)
+			local hit, endCoord = ShapeTestNav(0, {x = pontoRotacionado.x, y = pontoRotacionado.y, z = pontoRotacionado.z}, {x = pontoRotacionado.x, y = pontoRotacionado.y, z = pontoRotacionado.z - 100.0}, GlobalRaycastFlags)
+			util.create_thread(function()
+				for k = 1, 1000 do
+					GRAPHICS.DRAW_MARKER(28, pontoRotacionado.x,
+					pontoRotacionado.y, pontoRotacionado.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.35, 0.35, 0.35, 150, 0, 0, 100, 0, false, 2, false, 0, 0, false)
+					Wait()
+				end
+			end)
+            -- Se encontrar o chão, faz um Raycast para verificar a acessibilidade
+            if hit then
+                local origem = v3.new(pontoRotacionado.x, pontoRotacionado.y, endCoord.z + alturaRaycast)  -- Aumentar a altura de início do Raycast
+                local direcao = v3.new(0, 0, -1)  -- Raycast para baixo
+                local colisaoValida, hitPos = verificarColisaoRaycast(origem, direcao, distanciaRaycast)
+
+                -- Apenas adiciona o ponto se o Raycast encontrar uma colisão válida
+                if colisaoValida then
+                    table.insert(pontosValidos, {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5})
+                end
+            end
+        end
+    end
+
+    return pontosValidos  -- Retorna os pontos válidos após verificar com Raycast
+end
+
 
 -- Função principal para gerar a navmesh com Raycast de colisão para melhorar a acessibilidade
 function gerarNavmeshMultiplasAlturasComRaycast(centro, raio, passo, alturas, anguloMaximo, limiteDesalinhamento, limiteDeConexao, alturaRaycast, distanciaRaycast)
@@ -8328,7 +8526,7 @@ function verificarPoligonoAtravessandoParedes(poligono, distanciaRaycast)
         --local _, hit, _, _, _ = GetShapeTestResult(handle)
 		local curVertV3 = v3.new(verticeAtual.x, verticeAtual.y, verticeAtual.z)
 		local nextVertV3 = v3.new(proximoVertice.x, proximoVertice.y, proximoVertice.z)
-		local hit, _, _, _ = ShapeTestNav(0, curVertV3, nextVertV3, 83)
+		local hit, _, _, _ = ShapeTestNav(0, curVertV3, nextVertV3, GlobalRaycastFlags)
         -- Se o Raycast detectar uma colisão, significa que o polígono está atravessando uma parede
         if hit then
             return true  -- Polígono está atravessando uma parede
@@ -8342,7 +8540,10 @@ end
 function filtrarPoligonosAtravessandoParedes(poligonos, distanciaRaycast)
     local poligonosValidos = {}
 
-    for _, poligono in ipairs(poligonos) do
+	local LoopCount = 0
+	local i = 1
+	while i <= #poligonos do
+		local poligono = poligonos[i]
         -- Verifica se o polígono está atravessando uma parede
         local atravessando = verificarPoligonoAtravessandoParedes(poligono, distanciaRaycast)
 
@@ -8350,6 +8551,13 @@ function filtrarPoligonosAtravessandoParedes(poligonos, distanciaRaycast)
         if not atravessando then
             table.insert(poligonosValidos, poligono)
         end
+		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+		i = i + 1
     end
 
     return poligonosValidos  -- Retorna os polígonos que não atravessam paredes
@@ -8406,7 +8614,7 @@ function verificarVizinhosComRaycast(poli1, poli2)
             --local _, hit, _, _, _ = GetShapeTestResult(handle)
 			local vertice1V3 = v3.new(vertice1.x, vertice1.y, vertice1.z)
 			local vertice2V3 = v3.new(vertice2.x, vertice2.y, vertice2.z)
-			local hit = ShapeTestNav(0, vertice1V3, vertice2V3, 83)
+			local hit = ShapeTestNav(0, vertice1V3, vertice2V3, GlobalRaycastFlags)
             -- Se o Raycast detectar uma colisão, os polígonos não podem ser vizinhos
             if hit then
                 return false  -- Há uma colisão, não são vizinhos
@@ -8420,8 +8628,16 @@ end
 -- Função para conectar polígonos como vizinhos, verificando com Raycast antes de conectar
 function conectarVizinhosComRaycast(poligonos, limiteDeConexao)
 	local LoopCount = 0
-    for i, poligono1 in ipairs(poligonos) do
-        for j, poligono2 in ipairs(poligonos) do
+	local i = 1
+	while i <= #poligonos do
+		local poligono1 = poligonos[i]
+		local j = 1
+		directx.draw_text(0.7, 0.45, "Starting to connect polygon neighbors, total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		directx.draw_text(0.7, 0.50, "Starting to connect polygon neighbors, stage "..i , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		while j <= #poligonos do
+			directx.draw_text(0.7, 0.45, "Starting to connect polygon neighbors, total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			directx.draw_text(0.7, 0.55, "Starting to connect polygon neighbors, stage "..j , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			local poligono2 = poligonos[j]
 			if poligono1.Neighboors == nil then
 				poligono1.Neighboors = {}
 			end
@@ -8452,48 +8668,137 @@ function conectarVizinhosComRaycast(poligonos, limiteDeConexao)
 				LoopCount = 0
 				Wait()
 			end
+			j = j + 1
         end
 		LoopCount = LoopCount + 1
 		if LoopCount > MaxLoopCount then
 			LoopCount = 0
 			Wait()
 		end
+		i = i + 1
     end
 end
 
--- Função principal para gerar a navmesh com filtro de vizinhos usando Raycast
-function gerarNavmeshComVizinhosFiltradosPorRaycast(centro, raio, passo, alturas, anguloMaximo, limiteDesalinhamento, limiteDeConexao, alturaRaycast, distanciaRaycast)
-    local poligonosFinal = {}
+-- Função para rotacionar um polígono em torno do centro (eixo Z)
+function rotacionarPoligono(poligono, centro, angulo)
+	local s = math.sin(angulo)
+	local c = math.cos(angulo)
 
-    for _, altura in ipairs(alturas) do
-        --print("Escaneando na altura: " .. altura)
+	local novoPoligono = {}
 
-        -- Ajustar a altura do ponto central para cada sessão de escaneamento
-        local centroAltura = v3.new(centro.x, centro.y, altura)
+	for _, vertice in ipairs(poligono) do
+		-- Translação do vértice em relação ao centro
+		local px = vertice.x - centro.x
+		local py = vertice.y - centro.y
 
-        -- Escanear a área com Raycast e gerar os polígonos
-        local pontosValidos = escanearAreaParaNavmeshComRaycast(centroAltura, raio, passo, alturaRaycast, distanciaRaycast)
+		-- Aplicar a rotação
+		local novoX = px * c - py * s
+		local novoY = px * s + py * c
 
-        -- Se encontrar pontos válidos, gerar polígonos
-        if #pontosValidos > 0 then
-            local poligonos = gerarPoligonosAPartirDosPontos(pontosValidos, passo)
+		-- Adicionar o vértice rotacionado ao novo polígono
+		table.insert(novoPoligono, {x = novoX + centro.x, y = novoY + centro.y, z = vertice.z})
+	end
 
-            -- Filtrar polígonos por inclinação
-            poligonos = filtrarPoligonosPorInclinacao(poligonos, anguloMaximo)
+	return novoPoligono
+end
+	
+	-- Função para gerar polígonos a partir de pontos sem rotação e aplicar a rotação ao polígono completo
+function gerarPoligonosComRotacaoFinal(pontos, passo, centro, angulo)
+    local poligonos = {}
 
-            -- Filtrar polígonos com vértices desalinhados
-            poligonos = filtrarPoligonosComVerticesDesalinhados(poligonos, limiteDesalinhamento)
+    -- Organizar os pontos em uma matriz bidimensional (grid) sem rotação
+    local grid = {}
+    for _, ponto in ipairs(pontos) do
+        local gridX = math.floor(ponto.x / passo)
+        local gridY = math.floor(ponto.y / passo)
 
-            -- Adicionar os polígonos filtrados à tabela final
-            for _, poligono in ipairs(poligonos) do
-                table.insert(poligonosFinal, poligono)
+        grid[gridX] = grid[gridX] or {}
+        grid[gridX][gridY] = ponto
+    end
+
+    -- Percorre a grade para formar polígonos (quadrados) com quatro pontos adjacentes
+    for x, coluna in pairs(grid) do
+        for y, p1 in pairs(coluna) do
+            local p2 = grid[x + 1] and grid[x + 1][y]
+            local p3 = grid[x] and grid[x][y + 1]
+            local p4 = grid[x + 1] and grid[x + 1][y + 1]
+
+            -- Se todos os quatro pontos existirem, formamos um quadrado
+            if p1 and p2 and p3 and p4 then
+                -- Criar o polígono antes de rotacionar
+                local poligono = {p1, p2, p4, p3}
+
+                -- Aplicar a rotação ao polígono inteiro
+                local poligonoRotacionado = rotacionarPoligono(poligono, centro, angulo)
+
+                -- Inserir o polígono rotacionado na lista
+                table.insert(poligonos, poligonoRotacionado)
             end
         end
     end
-	poligonosFinal = filtrarPoligonosDuplicados(poligonosFinal, toleranciaDuplicatas)
-    -- Conectar polígonos como vizinhos, verificando com Raycast antes de conectar
-    conectarVizinhosComRaycast(poligonosFinal, limiteDeConexao)
 
+    return poligonos  -- Retorna a lista de polígonos gerados e rotacionados
+end
+
+
+-- Função principal para gerar a navmesh com filtro de vizinhos usando Raycast
+function gerarNavmeshComVizinhosFiltradosPorRaycast(centro, raio, passo, alturas, anguloMaximo, limiteDesalinhamento, limiteDeConexao, alturaRaycast, distanciaRaycast, distanciaParedeRaycast, alturaMaxima, calculateNeighbors)
+    local poligonosFinal = {}
+	local i = 1
+	local RegPoints = {}
+	while i <= #alturas do
+		local altura = alturas[i]
+        --print("Escaneando na altura: " .. altura)
+
+        -- Ajustar a altura do ponto central para cada sessão de escaneamento
+		directx.draw_text(0.7, 0.25, "Iterating height "..i , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+        local centroAltura = v3.new(centro.x, centro.y, altura)
+		local pontosValidos = {}
+		pontosValidos = escanearAreaParaNavmeshComRaycast(centroAltura, raio, passo, alturaRaycast, distanciaRaycast, RegPoints)
+        -- Escanear a área com Raycast e gerar os polígonos
+        -- Se encontrar pontos válidos, gerar polígonos
+        if #pontosValidos > 0 then
+			local poligonos = {}
+			directx.draw_text(0.7, 0.40, "Generating Height Polygons "..i , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			--if angle then
+			--	poligonos = gerarEajustarPoligonos(pontosValidos, passo, centro, angle, alturaRaycast)
+			--else
+				poligonos = gerarPoligonosAPartirDosPontos(pontosValidos, passo)
+			directx.draw_text(0.7, 0.45, "Polygons From Points Generated, Total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			--end
+
+            -- Filtrar polígonos por inclinação
+            poligonos = filtrarPoligonosPorInclinacao(poligonos, anguloMaximo)
+			directx.draw_text(0.7, 0.50, "Filtered Polygons From Rotation X, Total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+
+            -- Filtrar polígonos com vértices desalinhados
+            poligonos = filtrarPoligonosComVerticesDesalinhados(poligonos, limiteDesalinhamento)
+			directx.draw_text(0.7, 0.55, "Filtered Polygons From Wrong Rot, Total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+
+			poligonos = filtrarPoligonosAtravessandoParedes(poligonos, distanciaParedeRaycast)
+			directx.draw_text(0.7, 0.60, "Filtered Polygons Passing Through Walls, Total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			
+			poligonos = filtrarPoligonosPorAltura(poligonos, alturaMaxima)
+			directx.draw_text(0.7, 0.65, "Filtered Polygons With Much Height, Total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+            -- Adicionar os polígonos filtrados à tabela final
+            for _, poligono in ipairs(poligonos) do
+                table.insert(poligonosFinal, poligono)
+                table.insert(Polys1, poligono)
+            end
+			--poligonosFinal = filtrarPoligonosDuplicados(poligonosFinal, toleranciaDuplicatas)
+			Polys1 = poligonosFinal
+        end
+		i = i + 1
+    end
+	directx.draw_text(0.7, 0.40, "Starting to filter duped polygons, total is "..#poligonosFinal , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+	--poligonosFinal = filtrarPoligonosDuplicados(poligonosFinal, toleranciaDuplicatas)
+	--poligonosFinal = filtrarECombinarPoligonos(poligonosFinal)
+    -- Conectar polígonos como vizinhos, verificando com Raycast antes de conectar
+	if calculateNeighbors then
+		directx.draw_text(0.7, 0.45, "Starting to connect polygon neighbors, total is "..#poligonosFinal , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+    	conectarVizinhosComRaycast(poligonosFinal, limiteDeConexao)
+		directx.draw_text(0.7, 0.50, "Done connecting polygons neighbors" , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+	end
     return poligonosFinal  -- Retorna a tabela final com todos os polígonos filtrados e conectados
 end
 
@@ -8685,49 +8990,70 @@ end
 
 local NavmeshGeneratorMenu = menu.list(NavmeshingMenu, "Navmesh Generator", {}, "")
 
-local GenerationSizeRadius = 150.0
-menu.slider_float(NavmeshGeneratorMenu, "Generation Size Radius", {"generationsizeradius"}, "", 100, 2000, math.floor(GenerationSizeRadius) * 100, 100, function(on_change)
+local GenerationSizeRadius = 50.0
+menu.slider_float(NavmeshGeneratorMenu, "Generation Size Radius", {"generationsizeradius"}, "", 50, 20000, math.floor(GenerationSizeRadius) * 100, 100, function(on_change)
 	GenerationSizeRadius = on_change / 100
 end)
-local CellSize = 2.0
-menu.slider_float(NavmeshGeneratorMenu, "Cell Size", {"cellsize"}, "", 100, 2000, math.floor(CellSize) * 100, 50, function(on_change)
+local CellSize = 5.0
+menu.slider_float(NavmeshGeneratorMenu, "Cell Size", {"cellsize"}, "", 50, 2000, math.floor(CellSize) * 100, 50, function(on_change)
 	CellSize = on_change / 100
 end)
 local MaxAngle = 50.0
-menu.slider_float(NavmeshGeneratorMenu, "Max Angle", {"maxangle"}, "", 100, 2000, math.floor(MaxAngle) * 100, 50, function(on_change)
+menu.slider_float(NavmeshGeneratorMenu, "Max Angle", {"maxangle"}, "", 50, 20000, math.floor(MaxAngle) * 100, 50, function(on_change)
 	MaxAngle = on_change / 100
 end)
 local MaxAlign = 5.5
-menu.slider_float(NavmeshGeneratorMenu, "Max Align", {"maxalign"}, "", 100, 2000, math.floor(MaxAlign) * 100, 50, function(on_change)
+menu.slider_float(NavmeshGeneratorMenu, "Max Align", {"maxalign"}, "", 50, 20000, math.floor(MaxAlign) * 100, 50, function(on_change)
 	MaxAlign = on_change / 100
 end)
-local NeighborRadius = 1.0
-menu.slider_float(NavmeshGeneratorMenu, "Neighbor Radius", {"neighborradius"}, "", 100, 2000, math.floor(NeighborRadius) * 100, 50, function(on_change)
+local NeighborRadius = 0.10
+menu.slider_float(NavmeshGeneratorMenu, "Neighbor Radius", {"neighborradius"}, "", 10, 20000, math.floor(NeighborRadius) * 100, 10, function(on_change)
 	NeighborRadius = on_change / 100
 end)
 local ValidCollisionCheck = 2.0
-menu.slider_float(NavmeshGeneratorMenu, "Valid Collision Check", {"validcollisioncheck"}, "", 100, 2000, math.floor(ValidCollisionCheck) * 100, 50, function(on_change)
+menu.slider_float(NavmeshGeneratorMenu, "Valid Collision Check", {"validcollisioncheck"}, "", 50, 20000, math.floor(ValidCollisionCheck) * 100, 50, function(on_change)
 	ValidCollisionCheck = on_change / 100
 end)
 local ValidCollisionCheck2 = 10.0
-menu.slider_float(NavmeshGeneratorMenu, "Valid Collision Check 2", {"validcollisioncheck2"}, "", 100, 2000, math.floor(ValidCollisionCheck2) * 100, 50, function(on_change)
+menu.slider_float(NavmeshGeneratorMenu, "Valid Collision Check 2", {"validcollisioncheck2"}, "", 50, 20000, math.floor(ValidCollisionCheck2) * 100, 50, function(on_change)
 	ValidCollisionCheck2 = on_change / 100
+end)
+local WallCollisionCheck = 1.0
+menu.slider_float(NavmeshGeneratorMenu, "Wall Collision Check", {"wallcollisioncheck"}, "", 0, 20000, math.floor(WallCollisionCheck) * 100, 10, function(on_change)
+	WallCollisionCheck = on_change / 100
+end)
+local MaxHeight = 5.0
+menu.slider_float(NavmeshGeneratorMenu, "Max Height", {"maxheight"}, "", 0, 20000, math.floor(MaxHeight) * 100, 10, function(on_change)
+	MaxHeight = on_change / 100
+end)
+local NumFloors = 1
+menu.slider(NavmeshGeneratorMenu, "Num Floors", {"numfloors"}, "", 1, 20, NumFloors, 1, function(on_change)
+	NumFloors = on_change
 end)
 
 menu.action(NavmeshGeneratorMenu, "Generate Navmesh", {}, "", function(Toggle)
 	local Pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
 	--Pos.z = Pos.z - 1.0
-	local Scan = gerarNavmeshComVizinhosFiltradosPorRaycast(Pos, GenerationSizeRadius, CellSize, {Pos.z}, MaxAngle, MaxAlign, NeighborRadius, ValidCollisionCheck, ValidCollisionCheck2)
+	local Floors = {}
+	for k = 0, NumFloors-1 do
+		Floors[#Floors+1] = Pos.z + 2.0 * k
+	end
+	local Rot = ENTITY.GET_ENTITY_HEADING(PLAYER.PLAYER_PED_ID())
+	local Scan = gerarNavmeshComVizinhosFiltradosPorRaycast(Pos, GenerationSizeRadius, CellSize, Floors, MaxAngle, MaxAlign, NeighborRadius, ValidCollisionCheck, ValidCollisionCheck2, WallCollisionCheck, MaxHeight, false)
+	--gerarNavmeshComVizinhosFiltradosPorRaycastAngled(Pos, GenerationSizeRadius, CellSize, {Pos.z}, MaxAngle, MaxAlign, NeighborRadius, ValidCollisionCheck, ValidCollisionCheck2, Rot)
+	--gerarNavmeshComVizinhosFiltradosPorRaycast(Pos, GenerationSizeRadius, CellSize, {Pos.z}, MaxAngle, MaxAlign, NeighborRadius, ValidCollisionCheck, ValidCollisionCheck2, ENTITY.GET_ENTITY_FORWARD_VECTOR(PLAYER.PLAYER_PED_ID()))
 	--gerarNavmeshMultiplasAlturasComRaycastEFiltragem(Pos, 30.0, 0.5, {Pos.z, Pos.z + 3.0, Pos.z + 6.0, Pos.z + 9.0}, 30.0, 0.50, 1.0, 1.0 * 1, 5.0 * 1)
 	--gerarNavmeshMultiplasAlturasComRaycast(Pos, 30.0, 1.5, {Pos.z, Pos.z + 10.0, Pos.z + 20.0, Pos.z + 30.0}, 30.0, 1.0, 3.0, 2.0 * 1, 5.0 * 1)
 	--gerarNavmeshMultiplasAlturasComFiltrosEFiltragemDeDuplicatas(Pos, 20.0, 2.5, {Pos.z, Pos.z + 10.0, Pos.z + 20.0}, 50.0, 5.0, 0.0)
 	--gerarNavmeshMultiplasAlturas(Pos, 50.0, 2.5, {Pos.z, Pos.z + 10.0})
 	--gerarNavmeshComFiltroDeDesalinhamento(Pos, 50.0, 2.5, 30.0, 1.0)--gerarNavmesh(Pos, 50.0, 2.0)
-	if Scan ~= nil then
+	if Scan and #Scan > 0 then
 		Polys1 = Scan
+		Print("Calculating neighbors")
 		--Grid = {}
 		----armazenarPoligonosNoGrid(Polys1, GridSizeIteration)
 		--armazenarPoligonosNoGridComOrigem(Grid, Polys1, 5.0, Center.x, Center.y, Center.z, 10.0)
+		conectarVizinhosComRaycast(Polys1, NeighborRadius)
 		Grid = {}
 		local IDs = {}
 		for k = 1, #Polys1 do
@@ -8735,9 +9061,42 @@ menu.action(NavmeshGeneratorMenu, "Generate Navmesh", {}, "", function(Toggle)
 		end
 		Polys1Center = calcularCentroNavmeshComIndices(Polys1, IDs)
 		Grid = inicializarGridEstatico(Polys1Center.x, Polys1Center.y, GlobalCellSize)
-
 		armazenarPoligonosNoGridEstatico(Grid, Polys1, GlobalCellSize, GlobalInfluenceRadius * GlobalCellSize)
 		Print(#Scan)
+	end
+end)
+
+menu.action(NavmeshGeneratorMenu, "Generate Navmesh V2", {}, "", function(Toggle)
+	local Pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
+	local NavAreaSize = 50.0
+	local StepSize = 5.0
+	local Points = {}
+	local x = -NavAreaSize
+	while x <= NavAreaSize do
+		local y = -NavAreaSize
+		while y <= NavAreaSize do
+			local NewPos = v3.new(Pos.x + x, Pos.y + y, Pos.z)
+			local NewPos2 = v3.new(Pos.x + x, Pos.y + y, Pos.z - 100.0)
+			local Hit, OutCoord = ShapeTestNav(PLAYER.PLAYER_PED_ID(), NewPos, NewPos2, GlobalRaycastFlags)
+			OutCoord.z = OutCoord.z + 1.0
+			local NewPos3 = v3.new(OutCoord.x + x, OutCoord.y + y, OutCoord.z)
+			local NewPos4 = v3.new(OutCoord.x + x, OutCoord.y + y + StepSize, OutCoord.z)
+			local Hit2, OutCoord2 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), NewPos3, NewPos4, GlobalRaycastFlags)
+			OutCoord2.z = OutCoord2.z + 1.0
+			Points[#Points+1] = OutCoord2
+			y = y + StepSize
+		end
+		x = x + StepSize
+	end
+	for i = 1, 1000 do
+		for k = 1, #Points do
+		--	GRAPHICS.DRAW_LINE(Points[k].x, Points[k].y, Points[k].z,
+		--	Points[k+1].x, Points[k+1].y, Points[k+1].z, 255, 0, 255, 255)
+			GRAPHICS.DRAW_LINE(Points[k].x, Points[k].y, Points[k].z,
+			Points[k].x, Points[k].y, Points[k].z + 1.0, 255, 0, 255, 255)
+		end
+		
+		Wait()
 	end
 end)
 
@@ -8752,7 +9111,7 @@ end)
 --armazenarPoligonosNoGridComOrigem(Grid, Polys1, 5.0, Center.x, Center.y, Center.z, 10.0)
 
 function AdjustTraveledPaths(Indexes, PolysT, Pos)
-	local Index = 1
+	local Index = 2
 	for k = 1, #Indexes do
 		if InsidePolygon(PolysT[Indexes[k]], Pos) then
 			return Index
@@ -8927,7 +9286,7 @@ function verificarVizinhosComProximidadeERaycast(ponto1, ponto2, distanciaMaxima
     -- Usar Raycast para verificar se há um obstáculo entre os dois pontos
     --local handle = StartShapeTestRay(ponto1[1], ponto1[2], ponto1[3], ponto2[1], ponto2[2], ponto2[3], -1, 0, 7)
     --local _, hit, _, _, _ = GetShapeTestResult(handle)
-	local hit = ShapeTestNav(0, {x = ponto1[1], y = ponto1[2], z = ponto1[3]}, {x = ponto2[1], y = ponto2[2], z = ponto2[3]}, 83)
+	local hit = ShapeTestNav(0, {x = ponto1[1], y = ponto1[2], z = ponto1[3]}, {x = ponto2[1], y = ponto2[2], z = ponto2[3]}, GlobalRaycastFlags)
     -- Se o Raycast detectar uma colisão (hit == 1), então há uma obstrução, logo não são vizinhos
     if hit then
         return false
@@ -9062,3 +9421,415 @@ function calcularVizinhosParaPoligonosComDistanciaMaxima(poligonos, kdTree, k, d
 
     return vizinhosPorPoligono
 end
+
+-- Função para rotacionar um ponto em torno do centro (eixo Z)
+function rotacionarPonto2(ponto, centro, angulo)
+	local s = math.sin(angulo)
+	local c = math.cos(angulo)
+
+	-- Translação do ponto em relação ao centro
+	local px = ponto.x - centro.x
+	local py = ponto.y - centro.y
+
+	-- Aplicar a rotação
+	local novoX = px * c - py * s
+	local novoY = px * s + py * c
+
+	-- Retornar o ponto rotacionado com a translação de volta
+	return {x = novoX + centro.x, y = novoY + centro.y, z = ponto.z}
+end
+
+-- Função para verificar se um polígono está colidindo com o ambiente (usando Raycast)
+function verificarColisaoPoligono(poligono, alturaRaycast)
+    for _, vertice in ipairs(poligono) do
+        local origem = v3.new(vertice.x, vertice.y, vertice.z + alturaRaycast)
+        local direcao = v3.new(0, 0, -1)  -- Raycast para baixo
+        local colisaoValida, _ = verificarColisaoRaycast(origem, direcao, alturaRaycast)
+
+        -- Se houver colisão, o polígono está sobre algo
+        if colisaoValida then
+            return true
+        end
+    end
+    return false
+end
+
+-- Função para rotacionar um polígono e ajustar com base em colisões
+function rotacionarEajustarPoligono(poligono, centro, anguloInicial, alturaRaycast)
+    local angulo = anguloInicial
+    local poligonoAjustado = rotacionarPoligono(poligono, centro, angulo)
+
+    -- Verificar colisão e ajustar rotação se necessário
+    while verificarColisaoPoligono(poligonoAjustado, alturaRaycast) do
+        -- Ajusta o ângulo para evitar colisão (por exemplo, rotacionando em pequenos incrementos)
+        angulo = angulo + math.rad(5)
+        poligonoAjustado = rotacionarPoligono(poligono, centro, angulo)
+
+        -- Limite para evitar loop infinito
+        if angulo >= anguloInicial + math.rad(180) then
+            print("Não foi possível ajustar a rotação para evitar colisões.")
+            break
+        end
+		Wait()
+    end
+
+    return poligonoAjustado, angulo  -- Retorna o polígono ajustado e a rotação final
+end
+
+-- Função para gerar polígonos, aplicar rotação e ajustar com base em colisões
+function gerarEajustarPoligonos(pontos, passo, centro, anguloInicial, alturaRaycast)
+    local poligonos = {}
+
+    -- Organizar os pontos em uma matriz bidimensional (grid) sem rotação
+    local grid = {}
+    for _, ponto in ipairs(pontos) do
+        local gridX = math.floor(ponto.x / passo)
+        local gridY = math.floor(ponto.y / passo)
+
+        grid[gridX] = grid[gridX] or {}
+        grid[gridX][gridY] = ponto
+    end
+
+    -- Percorre o grid para formar polígonos (quadrados) com quatro pontos adjacentes
+    for x, coluna in pairs(grid) do
+        for y, p1 in pairs(coluna) do
+            local p2 = grid[x + 1] and grid[x + 1][y]
+            local p3 = grid[x] and grid[x][y + 1]
+            local p4 = grid[x + 1] and grid[x + 1][y + 1]
+
+            -- Se todos os quatro pontos existirem, formamos um quadrado
+            if p1 and p2 and p3 and p4 then
+                -- Criar o polígono
+                local poligono = {p1, p2, p4, p3}
+
+                -- Aplicar rotação inicial e ajustar com base em colisões
+                local poligonoAjustado, rotacaoFinal = rotacionarEajustarPoligono(poligono, centro, anguloInicial, alturaRaycast)
+
+                -- Inserir o polígono ajustado na lista
+                table.insert(poligonos, poligonoAjustado)
+            end
+        end
+    end
+
+    return poligonos  -- Retorna os polígonos ajustados e suas rotações finais
+end
+
+local NavNetID2 = 0
+local NavHandle2 = 0
+local PedNavSequence = false
+menu.toggle(TestMenu, "Create Ped For Nav 2", {}, "", function(Toggle)
+	PedNavSequence = Toggle
+	if not PedNavSequence then
+		if NavNetID2 ~= 0 then
+			NETWORK.SET_NETWORK_ID_ALWAYS_EXISTS_FOR_PLAYER(NavNetID2, PLAYER.PLAYER_ID(), false)
+		end
+		entities.delete_by_handle(NavHandle2)
+	end
+	if PedNavSequence then
+		local StartPos = {x = StartPath.x, y = StartPath.y, z = StartPath.z}
+		local GoToCoords = {x = -955.48394775391, y = 166.00401306152, z = 373.17413330078}
+		STREAMING.REQUEST_MODEL(joaat("mp_m_bogdangoon"))
+		while not STREAMING.HAS_MODEL_LOADED(joaat("mp_m_bogdangoon")) do
+			Wait()
+		end
+		--local Pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
+		NavHandle2 = PED.CREATE_PED(28, joaat("mp_m_bogdangoon"), StartPos.x, StartPos.y, StartPos.z, 0.0, true, true)
+		WEAPON.GIVE_WEAPON_TO_PED(NavHandle2, joaat("weapon_pistol"), 99999, false, true)
+		ENTITY.SET_ENTITY_AS_MISSION_ENTITY(NavHandle2, false, true)
+		NavNetID2 = NETWORK.PED_TO_NET(NavHandle2)
+		if NavNetID2 ~= 0 then
+			--NETWORK.SET_NETWORK_ID_ALWAYS_EXISTS_FOR_PLAYER(NavNetID, PLAYER.PLAYER_ID(), true)
+			--NETWORK.SET_NETWORK_ID_EXISTS_ON_ALL_MACHINES(NavNetID, true)
+			NETWORK.SET_NETWORK_ID_CAN_MIGRATE(NavNetID2, false)
+		end
+		local FoundIndex = 0
+		local TaskStatus = 0
+		local TaskCoords = {x = 0.0, y = 0.0, z = 0.0}
+		local FoundPaths = nil
+		local PathIndex = 1
+		local InPolyIndex = 1
+		local TargetPolyIndex = 1
+		local InsideStartPolygon = false
+		local TargetInsideTargetPolygon = false
+		local LastTargetPos = {x = 0.0, y = 0.0, z = 0.0}
+		local JumpDelay = 0
+		local Distance = 0.5
+		while PedNavSequence do
+			local Pos = ENTITY.GET_ENTITY_COORDS(NavHandle2)
+			local PlayerPos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
+			--PED.SET_PED_MIN_MOVE_BLEND_RATIO(NavHandle, 3.0)
+			--PED.SET_PED_MAX_MOVE_BLEND_RATIO(NavHandle, 3.0)
+			local FVect = ENTITY.GET_ENTITY_FORWARD_VECTOR(NavHandle2)
+			local AdjustedX = Pos.x + FVect.x * Distance
+			local AdjustedY = Pos.y + FVect.y * Distance
+			local AdjustedZ = (Pos.z + 0.5) + FVect.z * Distance
+			GRAPHICS.DRAW_LINE(Pos.x, Pos.y, Pos.z - 0.5,
+			AdjustedX, AdjustedY, AdjustedZ, 255, 0, 255, 255)
+			if JumpDelay <= 0 then
+				if HitClimbableObject(NavHandle2) then
+					TASK.TASK_CLIMB(NavHandle2, false)
+					JumpDelay = 30
+				end
+			else
+				JumpDelay = JumpDelay - 1
+			end
+			if FoundIndex == 0 then
+				FoundPaths, InPolyIndex, TargetPolyIndex, InsideStartPolygon, TargetInsideTargetPolygon = AStarPathFind(Pos, PlayerPos, 3, false, nil, nil, nil, nil, nil, nil)
+				if FoundPaths ~= nil then
+					FoundIndex = 1
+					LastTargetPos = PlayerPos
+					--Print(#FoundPaths)
+				end
+			else
+				if FoundPaths ~= nil then
+					local SequenceAddr = memory.alloc(8)
+					TASK.OPEN_SEQUENCE_TASK(SequenceAddr)
+					for i = 1, #FoundPaths do
+						TASK.TASK_GO_STRAIGHT_TO_COORD(0, FoundPaths[i].x, FoundPaths[i].y, FoundPaths[i].z, 3.0, -1, 40000.0, -1.0)
+					end
+					TASK.CLOSE_SEQUENCE_TASK(memory.read_int(SequenceAddr))
+					TASK.TASK_PERFORM_SEQUENCE(NavHandle2, memory.read_int(SequenceAddr))
+					break
+				end
+			end
+			Wait()
+		end
+	end
+end)
+
+--50 Offset to address 2 of go to task coords
+--1898 Offset from CPed to task go to coords
+--E40 Offset from task go to coords to get task go to coords correct address
+--C0 Offset from address task go to coords to task go to coords correct address
+
+local MoreSensivityPressed = 0.0
+local CamHandle = 0
+local CreatorMode = false
+menu.toggle(AddPolysMenu, "Grid Placement Mode", {}, "", function(Toggle)
+	CreatorMode = Toggle
+	if CreatorMode then
+		CamHandle = CAM.CREATE_CAM("DEFAULT_SCRIPTED_CAMERA", true)
+		local CamPos = CAM.GET_GAMEPLAY_CAM_COORD()
+		local CamRot = CAM.GET_GAMEPLAY_CAM_ROT(2)
+		CAM.SET_CAM_COORD(CamHandle, CamPos.x, CamPos.y, CamPos.z)
+		CAM.SET_CAM_ROT(CamHandle, CamRot.x, CamRot.y, CamRot.z, 2)
+		CAM.RENDER_SCRIPT_CAMS(true, false, 0, true, false, 0)
+		local CurDistance = 10.0
+		local PlacementMode = 0
+		local PolyID = 0
+		local PlacementModeText = {
+			[0] = "Create Mode",
+			[1] = "Snap Create Mode",
+			[2] = "Delete Mode"
+		}
+		local CreateGridSize = 1.0
+		while CreatorMode do
+			local PlayerPed = PLAYER.PLAYER_PED_ID()
+			local LRNormal = PAD.GET_CONTROL_NORMAL(0, 30)
+			local UDNormal = -PAD.GET_CONTROL_NORMAL(0, 31)
+			local LookLRNormal = -PAD.GET_CONTROL_NORMAL(0, 1) + -PAD.GET_DISABLED_CONTROL_NORMAL(0, 1)
+			local LookUDNormal = -PAD.GET_CONTROL_NORMAL(0, 2) + -PAD.GET_DISABLED_CONTROL_NORMAL(0, 2)
+			local FlyDownNormal = -PAD.GET_CONTROL_NORMAL(0, 10) + -PAD.GET_CONTROL_NORMAL(0, 224)
+			local FlyUpNormal = PAD.GET_CONTROL_NORMAL(0, 11) + PAD.GET_CONTROL_NORMAL(0, 21)
+			local CurCamRot = CAM.GET_CAM_ROT(CamHandle, 2)
+			local NewRot = v3.new(0.0, 0.0, CurCamRot.z)
+			local Matrix = GetRotationMatrix(NewRot)
+			local CurPos = CAM.GET_CAM_COORD(CamHandle)
+			local Adjusted = {
+				x = CurPos.x + ((Matrix[2][1] * UDNormal * (1.0 + MoreSensivityPressed)) + (Matrix[1][1] * LRNormal * (1.0 + MoreSensivityPressed))),
+				y = CurPos.y + ((Matrix[2][2] * UDNormal * (1.0 + MoreSensivityPressed)) + (Matrix[1][2] * LRNormal * (1.0 + MoreSensivityPressed))),
+				z = CurPos.z + ((Matrix[2][3] * UDNormal * (1.0 + MoreSensivityPressed)) + (Matrix[1][3] * LRNormal * (1.0 + MoreSensivityPressed)) + FlyUpNormal + FlyDownNormal)
+			}
+			local AdjustedLook = {
+				x = CurCamRot.x + LookUDNormal * 15.0,
+				y = 0.0,
+				z = CurCamRot.z + LookLRNormal * 15.0
+			}
+			CAM.SET_CAM_COORD(CamHandle, Adjusted.x, Adjusted.y, Adjusted.z)
+			CAM.SET_CAM_ROT(CamHandle, AdjustedLook.x, AdjustedLook.y, AdjustedLook.z, 2)
+			NETWORK.SET_ENTITY_LOCALLY_INVISIBLE(PlayerPed)
+			ENTITY.SET_ENTITY_COORDS(PlayerPed, Adjusted.x, Adjusted.y, Adjusted.z, false, true)
+			ENTITY.SET_ENTITY_HEADING(PlayerPed, AdjustedLook.z)
+			HUD.LOCK_MINIMAP_ANGLE(math.ceil(Rotation180To360(AdjustedLook.z)))
+			local FlyCursorDownNormal = -PAD.GET_CONTROL_NORMAL(0, 251)
+			local FlyCursorUpNormal = PAD.GET_CONTROL_NORMAL(0, 250)
+			CurDistance = CurDistance + FlyCursorDownNormal + FlyCursorUpNormal
+			if CurDistance > 500.0 then
+				CurDistance = 2.0
+			end
+			if CurDistance < 2.0 then
+				CurDistance = 500.0
+			end
+			CursorPos, DidHit, OutEnt = RaycastFromCamHandle(CamHandle, PlayerPed, CurDistance, 511)
+			CursorPos.z = CursorPos.z + 1.0
+			GRAPHICS.DRAW_MARKER(28, CursorPos.x,
+			CursorPos.y, CursorPos.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.35, 0.35, 0.35, 0, 150, 0, 100, 0, false, 2, false, 0, 0, false)
+			MoreSensivityPressed = PAD.GET_CONTROL_NORMAL(0, 22) * 2.0
+			local ReleasedMove = PAD.IS_CONTROL_JUST_RELEASED(0, 25)
+			local ReleasedPlace = PAD.IS_CONTROL_JUST_RELEASED(0, 24)
+			local ChangeMode = PAD.IS_CONTROL_JUST_RELEASED(0, 189)
+			directx.draw_text(0.7, 0.7, PlacementModeText[PlacementMode] , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			if PlacementMode == 0 then
+				local Pos1 = GetPositionCircle(CursorPos, CreateGridSize, addRotation(AdjustedLook.z, 45.0))
+				local Pos2 = GetPositionCircle(CursorPos, CreateGridSize, addRotation(AdjustedLook.z, 135.0))
+				local Pos3 = GetPositionCircle(CursorPos, CreateGridSize, addRotation(AdjustedLook.z, 225.0))
+				local Pos4 = GetPositionCircle(CursorPos, CreateGridSize, addRotation(AdjustedLook.z, 315.0))
+				GRAPHICS.DRAW_LINE(Pos1.x, Pos1.y, Pos1.z,
+				Pos2.x, Pos2.y, Pos2.z, 255, 255, 255, 150)
+				GRAPHICS.DRAW_LINE(Pos2.x, Pos2.y, Pos2.z,
+				Pos3.x, Pos3.y, Pos3.z, 255, 255, 255, 150)
+				GRAPHICS.DRAW_LINE(Pos3.x, Pos3.y, Pos3.z,
+				Pos4.x, Pos4.y, Pos4.z, 255, 255, 255, 150)
+				GRAPHICS.DRAW_LINE(Pos4.x, Pos4.y, Pos4.z,
+				Pos1.x, Pos1.y, Pos1.z, 255, 255, 255, 150)
+				if ReleasedPlace then
+					AddNewPolygonGrid(Pos1, Pos2, Pos3, Pos4)
+				end
+			elseif PlacementMode == 1 then
+				PolyID = GetClosestPolygon(Polys1, CursorPos, false, 0, 0)
+				if PolyID ~= 0 then
+					local ClosestVertex1 = 0
+					local ClosestVertex2 = 0
+					local VertexCopy = {}
+					for k = 1, #Polys1[PolyID] do
+						VertexCopy[#VertexCopy+1] = {x = Polys1[PolyID][k].x, y = Polys1[PolyID][k].y, z = Polys1[PolyID][k].z}
+					end
+					local Distance = 1000.0
+					for k = 1, #VertexCopy do
+						local Dist = DistanceBetween(VertexCopy[k].x, VertexCopy[k].y, VertexCopy[k].z, CursorPos.x, CursorPos.y, CursorPos.z)
+						if Dist < Distance then
+							Distance = Dist
+							ClosestVertex1 = k
+						end
+					end
+					Distance = 1000.0
+					for k = 1, #VertexCopy do
+						if k ~= ClosestVertex1 then
+							local Dist = DistanceBetween(VertexCopy[k].x, VertexCopy[k].y, VertexCopy[k].z, CursorPos.x, CursorPos.y, CursorPos.z)
+							if Dist < Distance then
+								Distance = Dist
+								ClosestVertex2 = k
+							end
+						end
+					end
+					if ClosestVertex1 ~= 0 and ClosestVertex2 ~= 0 then
+						local Pos1 = VertexCopy[ClosestVertex1]
+						local Pos2 = VertexCopy[ClosestVertex2]
+						local Pos3 = GetPositionCircle(CursorPos, CreateGridSize, addRotation(AdjustedLook.z, 225.0))
+						local Pos4 = GetPositionCircle(CursorPos, CreateGridSize, addRotation(AdjustedLook.z, 315.0))
+						GRAPHICS.DRAW_LINE(Pos1.x, Pos1.y, Pos1.z,
+						Pos2.x, Pos2.y, Pos2.z, 255, 255, 255, 150)
+						GRAPHICS.DRAW_LINE(Pos2.x, Pos2.y, Pos2.z,
+						Pos3.x, Pos3.y, Pos3.z, 255, 255, 255, 150)
+						GRAPHICS.DRAW_LINE(Pos3.x, Pos3.y, Pos3.z,
+						Pos4.x, Pos4.y, Pos4.z, 255, 255, 255, 150)
+						GRAPHICS.DRAW_LINE(Pos4.x, Pos4.y, Pos4.z,
+						Pos1.x, Pos1.y, Pos1.z, 255, 255, 255, 150)
+						if ReleasedPlace then
+							AddNewPolygonGrid(Pos1, Pos2, Pos3, Pos4)
+						end
+					end
+				end
+			end
+			if ChangeMode then
+				PlacementMode = PlacementMode + 1
+				if PlacementMode > 2 then
+					PlacementMode = 0
+				end
+			end
+			Wait()
+		end
+	else
+		HUD.UNLOCK_MINIMAP_ANGLE()
+		if CamHandle ~= 0 then
+			CAM.RENDER_SCRIPT_CAMS(false, false, 0, true, false, 0)
+			CAM.DESTROY_CAM(CamHandle, false)
+			CamHandle = 0
+		end
+	end
+end)
+
+function Rotation180To360(Angle)
+    if Angle < 0.0 then
+        return 360.0 + Angle
+    else
+        return Angle
+    end
+end
+
+function AddNewPolygonGrid(Pos1, Pos2, Pos3, Pos4)
+	Polys1[#Polys1+1] = {}
+	Polys1[#Polys1][#Polys1[#Polys1]+1] = Pos1
+	Polys1[#Polys1][#Polys1[#Polys1]+1] = Pos2
+	Polys1[#Polys1][#Polys1[#Polys1]+1] = Pos3
+	Polys1[#Polys1][#Polys1[#Polys1]+1] = Pos4
+	SetAllPolysNeighboors(#Polys1)
+end
+
+-- Função para rotacionar um ponto ao redor de um eixo
+function rotacionarPonto(ponto, angulo, centro)
+    local cosAngulo = math.cos(angulo)
+    local sinAngulo = math.sin(angulo)
+
+    -- Translação para o centro
+    local dx = ponto.x - centro.x
+    local dy = ponto.y - centro.y
+
+    -- Aplicar a rotação em torno do centro
+    local novoX = dx * cosAngulo - dy * sinAngulo + centro.x
+    local novoY = dx * sinAngulo + dy * cosAngulo + centro.y
+
+    return {x = novoX, y = novoY, z = ponto.z}
+end
+
+-- Função para aplicar a rotação em um conjunto de pontos
+function aplicarRotacaoNosPontos(pontos, angulo, centro)
+    local pontosRotacionados = {}
+
+    for _, ponto in ipairs(pontos) do
+        table.insert(pontosRotacionados, rotacionarPonto(ponto, angulo, centro))
+    end
+
+    return pontosRotacionados
+end
+
+-- Função para organizar os pontos em uma matriz bidimensional com base na posição dos pontos
+function organizarPontos(pontos, passo)
+    local grid = {}
+
+    for _, ponto in ipairs(pontos) do
+        -- Ajustar os valores de X e Y para colocá-los na grade com base no passo
+        local gridX = math.floor(ponto.x / passo)
+        local gridY = math.floor(ponto.y / passo)
+
+        -- Armazenar o ponto em uma posição relativa na matriz
+        grid[gridX] = grid[gridX] or {}
+        grid[gridX][gridY] = ponto
+    end
+
+    return grid
+end
+
+-- Função para formar polígonos a partir dos pontos adjacentes
+function formarPoligonos(grid)
+    local poligonos = {}
+
+    -- Percorrer a grade para formar polígonos (quadrados ou retangulares)
+    for x, coluna in pairs(grid) do
+        for y, ponto in pairs(coluna) do
+            -- Verificar os pontos adjacentes (direita e acima)
+            local p1 = grid[x][y]
+            local p2 = grid[x + 1] and grid[x + 1][y] or nil
+            local p3 = grid[x][y + 1] or nil
+            local p4 = grid[x + 1] and grid[x + 1][y + 1] or nil
+
+            -- Se todos os quatro pontos existirem, formamos um quadrado
+            if p1 and p2 and p3 and p4 then
+                table.insert(poligonos, {p1, p2, p4, p3})  -- Forma um quadrado no sentido horário
+            end
+        end
+    end
+
+    return poligonos
+end
+
