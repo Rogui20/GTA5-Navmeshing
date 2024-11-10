@@ -1883,7 +1883,7 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 				end
 			end
 			if FoundIndex == 1 then
-				FoundPaths, InPolyIndex, TargetPolyIndex, InsideStartPolygon, TargetInsideTargetPolygon = AStarPathFind(Pos, PlayerPos, 1, false, nil, nil, true, nil, nil, true, true)
+				FoundPaths, InPolyIndex, TargetPolyIndex, InsideStartPolygon, TargetInsideTargetPolygon = AStarPathFind(Pos, PlayerPos, 1, false, nil, nil, nil, nil, nil, nil, nil)
 				if FoundPaths ~= nil then
 					FoundIndex = 2
 					LastDistance = 1000.0
@@ -3570,15 +3570,18 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPoly
 		--consultarGridComOrigem(Grid, Start.x, Start.y, Start.z, Polys1Center.x, Polys1Center.y, Polys1Center.z, 5.0)
 		--
 		if StartIndex == nil then
-			StartIndex = encontrarPoligonoDoPonto(Start, PolysT, 1.0)
+			StartIndex = encontrarPoligonoDoPonto(Start, PolysT, 2.0)
 			if StartIndex == nil then
 				StartIndex = GetClosestPolygon(PolysT, Start, Include, LowPriorityLevel, Bits)
 			end
 		else
 			local PolysIt = GetPolygonsFromGrid(StartIndex)
-			StartIndex = encontrarPoligonoDoPonto(Start, PolysIt, 1.0)
+			StartIndex = encontrarPoligonoDoPonto(Start, PolysIt, 2.0)
 			if StartIndex == nil then
 				StartIndex = GetClosestPolygon(PolysIt, Start, Include, LowPriorityLevel, Bits)
+				--Print("StartIndex Is Nil "..StartIndex)
+			else
+				--Print("StartIndex Is "..StartIndex)
 			end
 		end
 	end
@@ -3806,6 +3809,12 @@ function DistanceBetween(x1, y1, z1, x2, y2, z2)
 	local dy = y1 - y2
 	local dz = z1 - z2
 	return math.sqrt ( dx * dx + dy * dy + dz * dz)
+end
+
+function DistanceBetween2D(x1, y1, x2, y2)
+	local dx = x1 - x2
+	local dy = y1 - y2
+	return math.sqrt ( dx * dx + dy * dy)
 end
 
 function GetNearPolygonNeighbors(StartIndex, Size)
@@ -5964,7 +5973,7 @@ function a_star(start_index, goal_index, polygons)
     local start_centroid = calculate_centroid(polygons[start_index])
     local goal_centroid = calculate_centroid(polygons[goal_index])
     local f_score = {[start_index] = euclidean_distance(start_centroid, goal_centroid)}
-
+	local LoopCount = 0
     while next(open_set) do
         -- Seleciona o nó no open_set com o menor f_score
         local current_index = nil
@@ -6003,7 +6012,11 @@ function a_star(start_index, goal_index, polygons)
                 open_set[neighbor_index] = true
             end
         end
-		Wait()
+		LoopCount = LoopCount + 1
+		if LoopCount > 10 then
+			LoopCount = 0
+			Wait()
+		end
     end
 
     -- Se o open_set estiver vazio, significa que não há caminho
@@ -7873,6 +7886,17 @@ function filtrarPoligonosPorInclinacao(poligonos, anguloMaximo)
     return poligonosValidos  -- Retorna os polígonos que passaram no filtro de inclinação
 end
 
+function PoligonoInclinado(Poligono, AnguloMaximo)
+	local p1, p2, p3 = Poligono[1], Poligono[2], Poligono[3]
+
+	-- Calcula o vetor normal do polígono
+	local normal = calcularVetorNormal(p1, p2, p3)
+
+	-- Calcula o ângulo do vetor normal com o eixo Z
+	local angulo = calcularAnguloComEixoZ(normal)
+	return angulo <= AnguloMaximo
+end
+
 -- Função para calcular a variação de altura dos vértices de um polígono
 function verificarVariacaoAltura(p1, p2, p3, p4)
     local maxZ = math.max(p1.z, p2.z, p3.z, p4.z)
@@ -7906,6 +7930,49 @@ function filtrarPoligonosPorAltura(poligonos, alturaMaxima)
     end
 
     return poligonosValidos  -- Retorna os polígonos que passaram no filtro de altura
+end
+
+function filtrarPoligonosComTeto(poligonos)
+    local poligonosValidos = {}
+	local LoopCount = 0
+	local i = 1
+	while i <= #poligonos do
+		local poligono = poligonos[i]
+
+		local IsValid = true
+		for k = 1, #poligono do
+			local Hit = ShapeTestNav(0, {x = poligono[k].x, y = poligono[k].y, z = poligono[k].z}, {x = poligono[k].x, y = poligono[k].y, z = poligono[k].z + 1.0}, GlobalRaycastFlags)
+			if Hit then
+				IsValid = false
+				break
+			end
+		end
+
+		if IsValid then
+			table.insert(poligonosValidos, poligono)
+		end
+		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+		i = i + 1
+    end
+
+    return poligonosValidos  -- Retorna os polígonos que passaram no filtro de altura
+end
+
+function PoligonoColidindoComTeto(Poligono)
+	local IsValid = true
+	for k = 1, #Poligono do
+		local Hit = ShapeTestNav(0, {x = Poligono[k].x, y = Poligono[k].y, z = Poligono[k].z}, {x = Poligono[k].x, y = Poligono[k].y, z = Poligono[k].z + 1.0}, GlobalRaycastFlags)
+		if Hit then
+			IsValid = false
+			break
+		end
+	end
+	return IsValid
 end
 
 -- Função principal para gerar a navmesh com inclinação filtrada
@@ -8060,6 +8127,29 @@ function filtrarPoligonosComVerticesDesalinhados(poligonos, limiteDesalinhamento
     end
 
     return poligonosValidos  -- Retorna os polígonos que passaram no filtro
+end
+
+
+function PoligonoDesalinhado(Poligono, LimiteDesalinhamento)
+	local numVertices = #Poligono
+	local somaZ = 0.0
+	-- Somar as alturas dos vértices
+	for _, vertice in ipairs(Poligono) do
+		somaZ = somaZ + vertice.z
+	end
+
+	-- Calcular a altura média dos vértices
+	local alturaMedia = somaZ / numVertices
+
+	-- Verificar se algum vértice está muito abaixo da média
+	local desalinhado = false
+	for _, vertice in ipairs(Poligono) do
+		if (alturaMedia - vertice.z) > LimiteDesalinhamento then
+			desalinhado = true
+			break
+		end
+	end
+	return desalinhado
 end
 
 	-- Função principal para gerar a navmesh com filtro de desalinhamento de vértices
@@ -8323,40 +8413,59 @@ function escanearAreaParaNavmeshComRaycast(centro, raio, passo, alturaRaycast, d
     local pontosValidos = {}
 	local LoopCount = 0
 	local x = -raio
+	local LastZ = 0.0
+	local Height = 0.5
     -- Percorre a área em um Grid
 	while x <= raio do
 		local y = -raio
 		while y <= raio do
-            local coordX = centro.x + x
-            local coordY = centro.y + y
-            local coordZ = centro.z
-			
-			directx.draw_text(0.7, 0.30, "Area X: "..x.." Area Y: "..y , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
-			--if angle then
-			--	local NewPoint = rotacionarPonto({x = coordX, y = coordY, z = coordZ}, centro, angle or 0)
-			--	coordX = NewPoint.x
-            --	coordY = NewPoint.y
-            --	coordZ = NewPoint.z
-			--end
-            -- Tenta encontrar o chão para a coordenada atual
-            --local _, groundZ = GetGroundZFor_3dCoord(coordX, coordY, coordZ, 0)
-			local found, hitcoord = ShapeTestNav(0, {x = coordX, y = coordY, z = coordZ}, {x = coordX, y = coordY, z = coordZ - 100.0}, GlobalRaycastFlags)
-            -- Se encontrar o chão, faz um Raycast para verificar a acessibilidade
-            if found then
-                local origem = v3.new(coordX, coordY, coordZ + alturaRaycast)
-                local direcao = v3.new(0, 0, -1.0)  -- Raycast direcionado para baixo
-                local colisaoValida, hitPos = verificarColisaoRaycast(origem, direcao, distanciaRaycast)
+			for j = 0, 0 do
+				local coordX = centro.x + x
+				local coordY = centro.y + y
+				local coordZ = centro.z
+				if j == 1 then
+					coordZ = coordZ + LastZ
+				end
+				
+				directx.draw_text(0.7, 0.30, "Area X: "..x.." Area Y: "..y , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+				local found, hitcoord = ShapeTestNav(0, {x = coordX, y = coordY, z = coordZ}, {x = coordX, y = coordY, z = coordZ - 2.5}, GlobalRaycastFlags)
+				-- Se encontrar o chão, faz um Raycast para verificar a acessibilidade
+				if found then
+					local origem = v3.new(coordX, coordY, coordZ + alturaRaycast)
+					local direcao = v3.new(0, 0, -1.0)  -- Raycast direcionado para baixo
+					local colisaoValida, hitPos = verificarColisaoRaycast(origem, direcao, distanciaRaycast)
 
-                -- Apenas adiciona o ponto se o Raycast encontrar uma colisão válida
-                if colisaoValida then
-					local chave = math.floor(hitPos.x) .. "," .. math.floor(hitPos.y) .. "," .. math.floor(hitPos.z)
-					if RegPoints[chave] == nil then
-						-- Registrar o ponto e adicionar à lista de pontos válidos
-						RegPoints[chave] = true
-                    	table.insert(pontosValidos, {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5})
+					-- Apenas adiciona o ponto se o Raycast encontrar uma colisão válida
+					if colisaoValida then
+						local chave = math.floor(hitPos.x) .. "," .. math.floor(hitPos.y) .. "," .. math.floor(hitPos.z)
+						if j == 1 then
+							LastZ = (hitPos.z) - centro.z
+						end
+						if RegPoints[chave] == nil then
+							RegPoints[chave] = {}
+							RegPoints[chave][#RegPoints[chave]+1] = {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5}
+							table.insert(pontosValidos, {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5})
+						else
+							local Bool = true
+							for k = 1, #RegPoints[chave] do
+								--if (hitPos.x) > RegPoints[chave][k].x+Height or (hitPos.x) < RegPoints[chave][k].x-Height and
+								--(hitPos.y) > RegPoints[chave][k].y+Height or (hitPos.y) < RegPoints[chave][k].y-Height and
+								--(hitPos.z + 0.5) > RegPoints[chave][k].z+Height*1 or (hitPos.z + 0.5) < RegPoints[chave][k].z-Height*1
+								--then
+								--Print(DistanceBetween2D(RegPoints[chave][k].x, RegPoints[chave][k].y, hitPos.x, hitPos.y))
+								--if DistanceBetween2D(RegPoints[chave][k].x, RegPoints[chave][k].y, hitPos.x, hitPos.y) >= 0.00000000000001 then
+								--	Bool = true
+								--	break
+								--end
+							end
+							if Bool then
+								--RegPoints[chave][#RegPoints[chave]+1] = {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5}
+								table.insert(pontosValidos, {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5})
+							end
+						end
 					end
-                end
-            end
+				end
+			end
 			LoopCount = LoopCount + 1
 			directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 			if LoopCount > MaxLoopCount then
@@ -8380,7 +8489,7 @@ end
 -- Função adaptada para escanear uma área angular com Raycast
 function escanearAreaParaNavmeshComRaycastComRotacao(centro, raio, passo, alturaRaycast, distanciaRaycast, angulo)
     local pontosValidos = {}
-
+	local LoopCount = 0
     -- Percorre a área em um grid rotacionado
     for x = -raio, raio, passo do
         for y = -raio, raio, passo do
@@ -8393,13 +8502,7 @@ function escanearAreaParaNavmeshComRaycastComRotacao(centro, raio, passo, altura
             -- Tenta encontrar o chão para a coordenada rotacionada
            -- local _, groundZ = GetGroundZFor_3dCoord(pontoRotacionado.x, pontoRotacionado.y, pontoRotacionado.z, 0)
 			local hit, endCoord = ShapeTestNav(0, {x = pontoRotacionado.x, y = pontoRotacionado.y, z = pontoRotacionado.z}, {x = pontoRotacionado.x, y = pontoRotacionado.y, z = pontoRotacionado.z - 100.0}, GlobalRaycastFlags)
-			util.create_thread(function()
-				for k = 1, 1000 do
-					GRAPHICS.DRAW_MARKER(28, pontoRotacionado.x,
-					pontoRotacionado.y, pontoRotacionado.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.35, 0.35, 0.35, 150, 0, 0, 100, 0, false, 2, false, 0, 0, false)
-					Wait()
-				end
-			end)
+			
             -- Se encontrar o chão, faz um Raycast para verificar a acessibilidade
             if hit then
                 local origem = v3.new(pontoRotacionado.x, pontoRotacionado.y, endCoord.z + alturaRaycast)  -- Aumentar a altura de início do Raycast
@@ -8409,9 +8512,28 @@ function escanearAreaParaNavmeshComRaycastComRotacao(centro, raio, passo, altura
                 -- Apenas adiciona o ponto se o Raycast encontrar uma colisão válida
                 if colisaoValida then
                     table.insert(pontosValidos, {x = hitPos.x, y = hitPos.y, z = hitPos.z + 0.5})
+					util.create_thread(function()
+						for k = 1, 1000 do
+							GRAPHICS.DRAW_MARKER(28, hitPos.x,
+							hitPos.y, hitPos.z + 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.35, 0.35, 0.35, 150, 0, 0, 100, 0, false, 2, false, 0, 0, false)
+							Wait()
+						end
+					end)
                 end
             end
+			LoopCount = LoopCount + 1
+			directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+			if LoopCount > MaxLoopCount then
+				LoopCount = 0
+				Wait()
+			end
         end
+		LoopCount = LoopCount + 1
+		directx.draw_text(0.7, 0.35, "Loop Count "..LoopCount , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
     end
 
     return pontosValidos  -- Retorna os pontos válidos após verificar com Raycast
@@ -8744,9 +8866,9 @@ end
 -- Função principal para gerar a navmesh com filtro de vizinhos usando Raycast
 function gerarNavmeshComVizinhosFiltradosPorRaycast(centro, raio, passo, alturas, anguloMaximo, limiteDesalinhamento, limiteDeConexao, alturaRaycast, distanciaRaycast, distanciaParedeRaycast, alturaMaxima, calculateNeighbors)
     local poligonosFinal = {}
-	local i = 1
+	local i = #alturas
 	local RegPoints = {}
-	while i <= #alturas do
+	while i >= 1 do
 		local altura = alturas[i]
         --print("Escaneando na altura: " .. altura)
 
@@ -8758,12 +8880,17 @@ function gerarNavmeshComVizinhosFiltradosPorRaycast(centro, raio, passo, alturas
         -- Escanear a área com Raycast e gerar os polígonos
         -- Se encontrar pontos válidos, gerar polígonos
         if #pontosValidos > 0 then
+			Print("Valid Points Size Is "..#pontosValidos)
 			local poligonos = {}
 			directx.draw_text(0.7, 0.40, "Generating Height Polygons "..i , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 			--if angle then
 			--	poligonos = gerarEajustarPoligonos(pontosValidos, passo, centro, angle, alturaRaycast)
 			--else
-				poligonos = gerarPoligonosAPartirDosPontos(pontosValidos, passo)
+			--local NewGrid = organizarPontosPorProximidade(pontosValidos, passo)
+			--poligonos = formarPoligonosPorProximidade(NewGrid)
+			--poligonos = formarPoligonosAngulares(pontosValidos, 1.5, 0.1)
+			Print("Polygons size is "..#poligonos)
+			poligonos = gerarPoligonosAPartirDosPontos(pontosValidos, passo)
 			directx.draw_text(0.7, 0.45, "Polygons From Points Generated, Total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
 			--end
 
@@ -8781,17 +8908,25 @@ function gerarNavmeshComVizinhosFiltradosPorRaycast(centro, raio, passo, alturas
 			poligonos = filtrarPoligonosPorAltura(poligonos, alturaMaxima)
 			directx.draw_text(0.7, 0.65, "Filtered Polygons With Much Height, Total is "..#poligonos , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
             -- Adicionar os polígonos filtrados à tabela final
+			
+			poligonos = filtrarPoligonosComTeto(poligonos)
             for _, poligono in ipairs(poligonos) do
                 table.insert(poligonosFinal, poligono)
                 table.insert(Polys1, poligono)
             end
 			--poligonosFinal = filtrarPoligonosDuplicados(poligonosFinal, toleranciaDuplicatas)
+			poligonosFinal = filtrarPoligonosDuplicados2(poligonosFinal, toleranciaDuplicatas)
+			poligonosFinal = filtrarPoligonosDuplicadosComTolerancia(poligonosFinal, 0.5)
 			Polys1 = poligonosFinal
+			Print("New Polygons Size is "..#poligonos)
         end
-		i = i + 1
+		i = i - 1
     end
 	directx.draw_text(0.7, 0.40, "Starting to filter duped polygons, total is "..#poligonosFinal , ALIGN_CENTRE, 1.0, {r = 1.0, g = 1.0 , b = 1.0, a = 1.0}, false)
-	--poligonosFinal = filtrarPoligonosDuplicados(poligonosFinal, toleranciaDuplicatas)
+	local grid = inicializarGridEspacial(poligonosFinal, passo * 5)
+	poligonosFinal = filtrarPoligonosDuplicadosComGrid(grid, passo * 5, 0.1)
+	--poligonosFinal = filtrarPoligonosDuplicadosComTolerancia(poligonosFinal, 0.1)
+	--filtrarPoligonosDuplicados2(poligonosFinal, toleranciaDuplicatas)
 	--poligonosFinal = filtrarECombinarPoligonos(poligonosFinal)
     -- Conectar polígonos como vizinhos, verificando com Raycast antes de conectar
 	if calculateNeighbors then
@@ -8994,12 +9129,12 @@ local GenerationSizeRadius = 50.0
 menu.slider_float(NavmeshGeneratorMenu, "Generation Size Radius", {"generationsizeradius"}, "", 50, 20000, math.floor(GenerationSizeRadius) * 100, 100, function(on_change)
 	GenerationSizeRadius = on_change / 100
 end)
-local CellSize = 5.0
+local CellSize = 1.0
 menu.slider_float(NavmeshGeneratorMenu, "Cell Size", {"cellsize"}, "", 50, 2000, math.floor(CellSize) * 100, 50, function(on_change)
 	CellSize = on_change / 100
 end)
 local MaxAngle = 50.0
-menu.slider_float(NavmeshGeneratorMenu, "Max Angle", {"maxangle"}, "", 50, 20000, math.floor(MaxAngle) * 100, 50, function(on_change)
+menu.slider_float(NavmeshGeneratorMenu, "Max Angle", {"maxangle"}, "", 0, 20000, math.floor(MaxAngle) * 100, 50, function(on_change)
 	MaxAngle = on_change / 100
 end)
 local MaxAlign = 5.5
@@ -9053,51 +9188,199 @@ menu.action(NavmeshGeneratorMenu, "Generate Navmesh", {}, "", function(Toggle)
 		--Grid = {}
 		----armazenarPoligonosNoGrid(Polys1, GridSizeIteration)
 		--armazenarPoligonosNoGridComOrigem(Grid, Polys1, 5.0, Center.x, Center.y, Center.z, 10.0)
-		conectarVizinhosComRaycast(Polys1, NeighborRadius)
+		--conectarVizinhosComRaycast(Polys1, NeighborRadius)
 		Grid = {}
 		local IDs = {}
 		for k = 1, #Polys1 do
-			IDs[#IDs+1] = Polys1[k].ID
+			IDs[#IDs+1] = k
+			Polys1[k].ID = k
+			Polys1[k].Center = GetPolygonCenter(Polys1[k])
 		end
 		Polys1Center = calcularCentroNavmeshComIndices(Polys1, IDs)
 		Grid = inicializarGridEstatico(Polys1Center.x, Polys1Center.y, GlobalCellSize)
 		armazenarPoligonosNoGridEstatico(Grid, Polys1, GlobalCellSize, GlobalInfluenceRadius * GlobalCellSize)
+		local NeighborGrid = inicializarGrid3D(Polys1, CellSize)
+		local LoopCount = 0
+		for k = 1, #Polys1 do
+			Polys1[k].Neighboors = buscarVizinhosNoGrid(k, Polys1, NeighborGrid, CellSize)
+			LoopCount = LoopCount + 1
+			if LoopCount > MaxLoopCount then
+				LoopCount = 0
+				Wait()
+			end
+		end
 		Print(#Scan)
 	end
 end)
 
 menu.action(NavmeshGeneratorMenu, "Generate Navmesh V2", {}, "", function(Toggle)
 	local Pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
-	local NavAreaSize = 50.0
-	local StepSize = 5.0
-	local Points = {}
-	local x = -NavAreaSize
-	while x <= NavAreaSize do
-		local y = -NavAreaSize
-		while y <= NavAreaSize do
-			local NewPos = v3.new(Pos.x + x, Pos.y + y, Pos.z)
-			local NewPos2 = v3.new(Pos.x + x, Pos.y + y, Pos.z - 100.0)
-			local Hit, OutCoord = ShapeTestNav(PLAYER.PLAYER_PED_ID(), NewPos, NewPos2, GlobalRaycastFlags)
-			OutCoord.z = OutCoord.z + 1.0
-			local NewPos3 = v3.new(OutCoord.x + x, OutCoord.y + y, OutCoord.z)
-			local NewPos4 = v3.new(OutCoord.x + x, OutCoord.y + y + StepSize, OutCoord.z)
-			local Hit2, OutCoord2 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), NewPos3, NewPos4, GlobalRaycastFlags)
-			OutCoord2.z = OutCoord2.z + 1.0
-			Points[#Points+1] = OutCoord2
-			y = y + StepSize
-		end
-		x = x + StepSize
+	local Heading = ENTITY.GET_ENTITY_HEADING(PLAYER.PLAYER_PED_ID())
+	local NavAreaSize = GenerationSizeRadius
+	local StepSize = CellSize
+	local sqrt2_div_2 = 0.70710678118  -- Raiz de 2 dividida por 2
+	local StepSizeDiagonal = StepSize * sqrt2_div_2
+	local Floors = {}
+	for k = 0, NumFloors-1 do
+		Floors[#Floors+1] = Pos.z + 2.0 * k
 	end
-	for i = 1, 1000 do
-		for k = 1, #Points do
-		--	GRAPHICS.DRAW_LINE(Points[k].x, Points[k].y, Points[k].z,
-		--	Points[k+1].x, Points[k+1].y, Points[k+1].z, 255, 0, 255, 255)
-			GRAPHICS.DRAW_LINE(Points[k].x, Points[k].y, Points[k].z,
-			Points[k].x, Points[k].y, Points[k].z + 1.0, 255, 0, 255, 255)
+	local Points = {}
+	local NeighborsToCalc = {}
+	local DeepScan = 10.0
+	Polys1 = {}
+	local IDsAdded = {}
+	local NumOfNumber = 2
+	local PointsScanned = {}
+	local i = 1
+	while i <= #Floors do
+		local x = -NavAreaSize
+		while x <= NavAreaSize do
+			local y = -NavAreaSize
+			while y <= NavAreaSize do
+				local StartPointOriginal = {x = Pos.x + x, y = Pos.y + y, z = Floors[i]}
+				local RotatedPoint = rotacionarPonto2(StartPointOriginal, Pos, math.rad(Heading))
+				local StartRayPos = {
+					x = RotatedPoint.x,
+					y = RotatedPoint.y,
+					z = RotatedPoint.z
+				}
+				local RayPos = {
+					x = RotatedPoint.x,
+					y = RotatedPoint.y,
+					z = RotatedPoint.z - DeepScan
+				}
+				local Hit_, StartRayPos2 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), StartRayPos, RayPos, GlobalRaycastFlags)
+				StartRayPos2.z = StartRayPos2.z + 1.0
+				local PointKey = string.format("%." ..NumOfNumber.."f", StartRayPos2.x) .. " "..string.format("%." ..NumOfNumber.."f", StartRayPos2.y) .. " "..string.format("%." ..NumOfNumber.."f", StartRayPos2.z)
+				if PointsScanned[PointKey] == nil then
+					PointsScanned[PointKey] = 0
+					local Pos1 = GetPositionCircle(StartRayPos2, StepSizeDiagonal, addRotation(Heading, 45.0))
+					local Pos2 = GetPositionCircle(StartRayPos2, StepSizeDiagonal, addRotation(Heading, 135.0))
+					local Pos3 = GetPositionCircle(StartRayPos2, StepSizeDiagonal, addRotation(Heading, 225.0))
+					local Pos4 = GetPositionCircle(StartRayPos2, StepSizeDiagonal, addRotation(Heading, 315.0))
+					
+					local Hit, OutCoord = ShapeTestNav(PLAYER.PLAYER_PED_ID(), StartRayPos2, Pos1, GlobalRaycastFlags)
+					local Hit2, OutCoord2 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), StartRayPos2, Pos2, GlobalRaycastFlags)
+					local Hit3, OutCoord3 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), StartRayPos2, Pos3, GlobalRaycastFlags)
+					local Hit4, OutCoord4 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), StartRayPos2, Pos4, GlobalRaycastFlags)
+					OutCoord.z = OutCoord.z + 1.0
+					OutCoord2.z = OutCoord2.z + 1.0
+					OutCoord3.z = OutCoord3.z + 1.0
+					OutCoord4.z = OutCoord4.z + 1.0
+					local RayPos1 = {x = OutCoord.x, y = OutCoord.y, z = OutCoord.z - DeepScan}
+					local RayPos2 = {x = OutCoord2.x, y = OutCoord2.y, z = OutCoord2.z - DeepScan}
+					local RayPos3 = {x = OutCoord3.x, y = OutCoord3.y, z = OutCoord3.z - DeepScan}
+					local RayPos4 = {x = OutCoord4.x, y = OutCoord4.y, z = OutCoord4.z - DeepScan}
+					local Hit, _OutCoord = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord, RayPos1, GlobalRaycastFlags)
+					local Hit2, _OutCoord2 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord2, RayPos2, GlobalRaycastFlags)
+					local Hit3, _OutCoord3 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord3, RayPos3, GlobalRaycastFlags)
+					local Hit4, _OutCoord4 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord4, RayPos4, GlobalRaycastFlags)
+
+					_OutCoord.z = _OutCoord.z + 1.0
+					_OutCoord2.z = _OutCoord2.z + 1.0
+					_OutCoord3.z = _OutCoord3.z + 1.0
+					_OutCoord4.z = _OutCoord4.z + 1.0
+					local IsValid = true
+					local NewPoly = {_OutCoord, _OutCoord2, _OutCoord3, _OutCoord4}
+					for k = 1, #NewPoly do
+						for j = 1, #NewPoly do
+							if k ~= j then
+								if ShapeTestNav(PLAYER.PLAYER_PED_ID(), NewPoly[k], NewPoly[i], GlobalRaycastFlags) then
+									IsValid = false
+									break
+								end
+							end
+						end
+					end
+					if IsValid then
+						local PassingThrougWalls = not verificarPoligonoAtravessandoParedes(NewPoly, WallCollisionCheck)
+						and verificarVariacaoAltura(NewPoly[1], NewPoly[2], NewPoly[3], NewPoly[4]) <= MaxHeight
+						and PoligonoColidindoComTeto(NewPoly) and not PoligonoInclinado(NewPoly, MaxAngle)
+						and not PoligonoDesalinhado(NewPoly, MaxAlign)
+						if not PassingThrougWalls then
+							Polys1[#Polys1+1] = {_OutCoord, _OutCoord2, _OutCoord3, _OutCoord4, ID = #Polys1+1, Neighboors = {}}
+							Polys1[#Polys1].Center = GetPolygonCenter(Polys1[#Polys1])
+							local Key = string.format("%." ..NumOfNumber.."f", _OutCoord.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.z)
+							local Key2 = string.format("%." ..NumOfNumber.."f", _OutCoord2.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.z)
+							local Key3 = string.format("%." ..NumOfNumber.."f", _OutCoord3.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.z)
+							local Key4 = string.format("%." ..NumOfNumber.."f", _OutCoord4.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.z)
+							
+							NeighborsToCalc[Key] = NeighborsToCalc[Key] or {}
+							NeighborsToCalc[Key2] = NeighborsToCalc[Key2] or {}
+							NeighborsToCalc[Key3] = NeighborsToCalc[Key3] or {}
+							NeighborsToCalc[Key4] = NeighborsToCalc[Key4] or {}
+							NeighborsToCalc[Key][#NeighborsToCalc[Key]+1] = Polys1[#Polys1].ID
+							NeighborsToCalc[Key2][#NeighborsToCalc[Key2]+1] = Polys1[#Polys1].ID
+							NeighborsToCalc[Key3][#NeighborsToCalc[Key3]+1] = Polys1[#Polys1].ID
+							NeighborsToCalc[Key4][#NeighborsToCalc[Key4]+1] = Polys1[#Polys1].ID
+							
+							for k = 1, #NeighborsToCalc[Key] do
+								IDsAdded[NeighborsToCalc[Key][k]] = IDsAdded[NeighborsToCalc[Key][k]] or {}
+								for i = 1, #NeighborsToCalc[Key] do
+									if NeighborsToCalc[Key][k] ~= NeighborsToCalc[Key][i] then
+										if IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] == nil then
+											Polys1[NeighborsToCalc[Key][k]].Neighboors[#Polys1[NeighborsToCalc[Key][k]].Neighboors+1] = NeighborsToCalc[Key][i]
+											IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] = 0
+										end
+									end
+								end
+							end
+							for k = 1, #NeighborsToCalc[Key2] do
+								IDsAdded[NeighborsToCalc[Key2][k]] = IDsAdded[NeighborsToCalc[Key2][k]] or {}
+								for i = 1, #NeighborsToCalc[Key2] do
+									if NeighborsToCalc[Key2][k] ~= NeighborsToCalc[Key2][i] then
+										if IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] == nil then
+											Polys1[NeighborsToCalc[Key2][k]].Neighboors[#Polys1[NeighborsToCalc[Key2][k]].Neighboors+1] = NeighborsToCalc[Key2][i]
+											IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] = 0
+										end
+									end
+								end
+							end
+							for k = 1, #NeighborsToCalc[Key3] do
+								IDsAdded[NeighborsToCalc[Key3][k]] = IDsAdded[NeighborsToCalc[Key3][k]] or {}
+								for i = 1, #NeighborsToCalc[Key3] do
+									if NeighborsToCalc[Key3][k] ~= NeighborsToCalc[Key3][i] then
+										if IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] == nil then
+											Polys1[NeighborsToCalc[Key3][k]].Neighboors[#Polys1[NeighborsToCalc[Key3][k]].Neighboors+1] = NeighborsToCalc[Key3][i]
+											IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] = 0
+										end
+									end
+								end
+							end
+							for k = 1, #NeighborsToCalc[Key4] do
+								IDsAdded[NeighborsToCalc[Key4][k]] = IDsAdded[NeighborsToCalc[Key4][k]] or {}
+								for i = 1, #NeighborsToCalc[Key4] do
+									if NeighborsToCalc[Key4][k] ~= NeighborsToCalc[Key4][i] then
+										if IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] == nil then
+											Polys1[NeighborsToCalc[Key4][k]].Neighboors[#Polys1[NeighborsToCalc[Key4][k]].Neighboors+1] = NeighborsToCalc[Key4][i]
+											IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] = 0
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+				y = y + StepSize
+				--Wait()
+			end
+			x = x + StepSize
+			Wait()
 		end
-		
+		i = i + 1
 		Wait()
 	end
+	Grid = {}
+	local IDs = {}
+	for k = 1, #Polys1 do
+		IDs[#IDs+1] = k
+		Polys1[k].ID = k
+		Polys1[k].Center = GetPolygonCenter(Polys1[k])
+	end
+	Polys1Center = calcularCentroNavmeshComIndices(Polys1, IDs)
+	Grid = inicializarGridEstatico(Polys1Center.x, Polys1Center.y, GlobalCellSize)
+	armazenarPoligonosNoGridEstatico(Grid, Polys1, GlobalCellSize, GlobalInfluenceRadius * GlobalCellSize)
+	Print("Generated "..#Polys1.." Polygons")
 end)
 
 --armazenarPoligonosNoGrid(Polys1, GridSizeIteration)
@@ -9766,70 +10049,956 @@ function AddNewPolygonGrid(Pos1, Pos2, Pos3, Pos4)
 	SetAllPolysNeighboors(#Polys1)
 end
 
--- Função para rotacionar um ponto ao redor de um eixo
-function rotacionarPonto(ponto, angulo, centro)
-    local cosAngulo = math.cos(angulo)
-    local sinAngulo = math.sin(angulo)
-
-    -- Translação para o centro
-    local dx = ponto.x - centro.x
-    local dy = ponto.y - centro.y
-
-    -- Aplicar a rotação em torno do centro
-    local novoX = dx * cosAngulo - dy * sinAngulo + centro.x
-    local novoY = dx * sinAngulo + dy * cosAngulo + centro.y
-
-    return {x = novoX, y = novoY, z = ponto.z}
-end
-
--- Função para aplicar a rotação em um conjunto de pontos
-function aplicarRotacaoNosPontos(pontos, angulo, centro)
-    local pontosRotacionados = {}
-
-    for _, ponto in ipairs(pontos) do
-        table.insert(pontosRotacionados, rotacionarPonto(ponto, angulo, centro))
-    end
-
-    return pontosRotacionados
-end
-
--- Função para organizar os pontos em uma matriz bidimensional com base na posição dos pontos
-function organizarPontos(pontos, passo)
+-- Função para inicializar o grid espacial
+function inicializarGrid3D(poligonos, tamanhoCelula)
     local grid = {}
 
-    for _, ponto in ipairs(pontos) do
-        -- Ajustar os valores de X e Y para colocá-los na grade com base no passo
-        local gridX = math.floor(ponto.x / passo)
-        local gridY = math.floor(ponto.y / passo)
+    -- Iterar sobre todos os polígonos e colocá-los na célula correta do grid
+    for i, poligono in ipairs(poligonos) do
+        local centro = poligono.Center  -- Usar o centro do polígono para posicioná-lo no grid
 
-        -- Armazenar o ponto em uma posição relativa na matriz
+        -- Calcular a célula do grid com base nas coordenadas do centro
+        local gridX = math.floor(centro.x / tamanhoCelula)
+        local gridY = math.floor(centro.y / tamanhoCelula)
+        local gridZ = math.floor(centro.z / tamanhoCelula)
+
+        -- Atribuir o polígono à célula correspondente no grid
         grid[gridX] = grid[gridX] or {}
-        grid[gridX][gridY] = ponto
+        grid[gridX][gridY] = grid[gridX][gridY] or {}
+        grid[gridX][gridY][gridZ] = grid[gridX][gridY][gridZ] or {}
+        table.insert(grid[gridX][gridY][gridZ], i)  -- Armazena o índice do polígono
     end
 
     return grid
 end
 
--- Função para formar polígonos a partir dos pontos adjacentes
-function formarPoligonos(grid)
-    local poligonos = {}
+-- Função para buscar vizinhos em torno de uma célula do grid
+function buscarVizinhosNoGrid(poligonoIndice, poligonos, grid, tamanhoCelula)
+	local centro = poligonos[poligonoIndice].Center
+	local vizinhos = {}
 
-    -- Percorrer a grade para formar polígonos (quadrados ou retangulares)
-    for x, coluna in pairs(grid) do
-        for y, ponto in pairs(coluna) do
-            -- Verificar os pontos adjacentes (direita e acima)
-            local p1 = grid[x][y]
-            local p2 = grid[x + 1] and grid[x + 1][y] or nil
-            local p3 = grid[x][y + 1] or nil
-            local p4 = grid[x + 1] and grid[x + 1][y + 1] or nil
+	local LoopCount = 0
 
-            -- Se todos os quatro pontos existirem, formamos um quadrado
-            if p1 and p2 and p3 and p4 then
-                table.insert(poligonos, {p1, p2, p4, p3})  -- Forma um quadrado no sentido horário
+	-- Calcular em qual célula o centro do polígono está localizado
+	local gridX = math.floor(centro.x / tamanhoCelula)
+	local gridY = math.floor(centro.y / tamanhoCelula)
+	local gridZ = math.floor(centro.z / tamanhoCelula)
+
+	-- Verificar a célula atual e as células adjacentes no grid
+	for x = gridX - 1, gridX + 1 do
+		for y = gridY - 1, gridY + 1 do
+			for z = gridZ - 1, gridZ + 1 do
+				if grid[x] and grid[x][y] and grid[x][y][z] then
+					for _, indice in ipairs(grid[x][y][z]) do
+						if indice ~= poligonoIndice then
+							table.insert(vizinhos, indice)  -- Adicionar polígono como vizinho
+						end
+						LoopCount = LoopCount + 1
+						if LoopCount > MaxLoopCount then
+							LoopCount = 0
+							Wait()
+						end
+					end
+				end
+				LoopCount = LoopCount + 1
+				if LoopCount > MaxLoopCount then
+					LoopCount = 0
+					Wait()
+				end
+			end
+			LoopCount = LoopCount + 1
+			if LoopCount > MaxLoopCount then
+				LoopCount = 0
+				Wait()
+			end
+		end
+		LoopCount = LoopCount + 1
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+	end
+
+	return vizinhos
+end
+
+-- Função para gerar uma chave única a partir dos vértices do polígono
+function gerarChavePoligono(pontos)
+	local PointsCopy = {}
+	for k = 1, #pontos do
+		PointsCopy[#PointsCopy+1] = {x = pontos[k].x, y = pontos[k].y, z = pontos[k].z}
+	end
+	-- Ordenar os vértices para garantir que a chave seja única, independentemente da ordem
+	table.sort(PointsCopy, function(a, b)
+		if a.x == b.x then
+			if a.y == b.y then
+				return a.z < b.z
+			else
+				return a.y < b.y
+			end
+		else
+			return a.x < b.x
+		end
+	end)
+
+	-- Concatenar as coordenadas dos vértices para gerar uma chave única
+	local chave = ""
+	for _, ponto in ipairs(PointsCopy) do
+		chave = chave .. string.format("%f,%f,%f;", ponto.x, ponto.y, ponto.z)
+	end
+
+	return chave
+end
+
+-- Função para filtrar polígonos duplicados
+function filtrarPoligonosDuplicados2(poligonos)
+	local tabelaPoligonosUnicos = {}
+	local poligonosFiltrados = {}
+	local LoopCount = 0
+	-- Iterar sobre todos os polígonos
+	for _, poligono in ipairs(poligonos) do
+		-- Gerar uma chave única para o polígono
+		local chave = gerarChavePoligono(poligono)
+
+		-- Verificar se o polígono já foi registrado
+		if not tabelaPoligonosUnicos[chave] then
+			-- Se não for duplicado, registrar o polígono e a chave
+			tabelaPoligonosUnicos[chave] = true
+			table.insert(poligonosFiltrados, poligono)
+		end
+		LoopCount = LoopCount + 1
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+	end
+
+	return poligonosFiltrados
+end
+	
+
+-- Função para verificar se dois vértices são praticamente iguais com uma tolerância
+function verticesIguaisComTolerancia(ponto1, ponto2, tolerancia)
+    return math.abs(ponto1.x - ponto2.x) <= tolerancia and
+           math.abs(ponto1.y - ponto2.y) <= tolerancia and
+           math.abs(ponto1.z - ponto2.z) <= tolerancia
+end
+
+-- Função para gerar uma chave com tolerância
+function gerarChavePoligonoComTolerancia(pontos, tolerancia)
+	local PointsCopy = {}
+	for k = 1, #pontos do
+		PointsCopy[#PointsCopy+1] = {x = pontos[k].x, y = pontos[k].y, z = pontos[k].z}
+	end
+    -- Ordenar os vértices por proximidade com base na tolerância
+    table.sort(PointsCopy, function(a, b)
+        if math.abs(a.x - b.x) <= tolerancia then
+            if math.abs(a.y - b.y) <= tolerancia then
+                return a.z < b.z
+            else
+                return a.y < b.y
+            end
+        else
+            return a.x < b.x
+        end
+    end)
+
+    -- Gerar a chave com base nos vértices com tolerância
+    local chave = ""
+    for _, ponto in ipairs(PointsCopy) do
+        chave = chave .. string.format("%f,%f,%f;", ponto.x, ponto.y, ponto.z)
+    end
+
+    return chave
+end
+
+-- Filtrar polígonos com tolerância
+function filtrarPoligonosDuplicadosComTolerancia(poligonos, tolerancia)
+    local tabelaPoligonosUnicos = {}
+    local poligonosFiltrados = {}
+	local LoopCount = 0
+    for _, poligono in ipairs(poligonos) do
+        local chave = gerarChavePoligonoComTolerancia(poligono, tolerancia)
+        if not tabelaPoligonosUnicos[chave] then
+            tabelaPoligonosUnicos[chave] = true
+            table.insert(poligonosFiltrados, poligono)
+        end
+		LoopCount = LoopCount + 1
+		if LoopCount > MaxLoopCount then
+			LoopCount = 0
+			Wait()
+		end
+    end
+
+    return poligonosFiltrados
+end
+
+-- Função para inicializar o grid espacial
+function inicializarGridEspacial(poligonos, tamanhoCelula)
+    local grid = {}
+
+    -- Iterar sobre todos os polígonos e colocá-los na célula correta do grid
+    for i, poligono in ipairs(poligonos) do
+        local centro = calcularCentroPoligono(poligono)  -- Calcular o centro do polígono
+
+        -- Calcular a célula do grid com base nas coordenadas do centro
+        local gridX = math.floor(centro.x / tamanhoCelula)
+        local gridY = math.floor(centro.y / tamanhoCelula)
+        local gridZ = math.floor(centro.z / tamanhoCelula)
+
+        -- Criar uma entrada no grid se não existir
+        grid[gridX] = grid[gridX] or {}
+        grid[gridX][gridY] = grid[gridX][gridY] or {}
+        grid[gridX][gridY][gridZ] = grid[gridX][gridY][gridZ] or {}
+
+        -- Inserir o polígono na célula correta
+        table.insert(grid[gridX][gridY][gridZ], poligono)
+    end
+
+    return grid
+end
+
+-- Função para calcular o centro de um polígono (média dos vértices)
+function calcularCentroPoligono(poligono)
+    local somaX, somaY, somaZ = 0, 0, 0
+    for _, vertice in ipairs(poligono) do
+        somaX = somaX + vertice.x
+        somaY = somaY + vertice.y
+        somaZ = somaZ + vertice.z
+    end
+    local numVertices = #poligono
+    return {x = somaX / numVertices, y = somaY / numVertices, z = somaZ / numVertices}
+end
+
+-- Função para filtrar polígonos duplicados no grid espacial
+function filtrarPoligonosDuplicadosComGrid(grid, tamanhoCelula, tolerancia)
+    local poligonosFiltrados = {}
+    local tabelaPoligonosUnicos = {}
+
+    -- Iterar sobre todas as células do grid
+    for gridX, coluna in pairs(grid) do
+        for gridY, linha in pairs(coluna) do
+            for gridZ, celula in pairs(linha) do
+                -- Iterar sobre todos os polígonos na célula
+                for _, poligono in ipairs(celula) do
+                    -- Gerar uma chave para o polígono com base nos vértices
+                    local chave = gerarChavePoligonoComTolerancia(poligono, tolerancia)
+
+                    -- Verificar se o polígono já foi registrado
+                    if not tabelaPoligonosUnicos[chave] then
+                        -- Se não for duplicado, registrar o polígono e a chave
+                        tabelaPoligonosUnicos[chave] = true
+                        table.insert(poligonosFiltrados, poligono)
+                    end
+                end
             end
         end
     end
 
-    return poligonos
+    return poligonosFiltrados
 end
 
+local RiotWeapons = {
+	"weapon_smg",
+	"weapon_assaultsmg",
+	"weapon_assaultshotgun",
+	"weapon_heavyshotgun",
+	"weapon_pumpshotgun_mk2",
+	"weapon_assaultrifle_mk2",
+	"weapon_carbinerifle",
+	"weapon_specialcarbine",
+	"weapon_militaryrifle",
+	"weapon_combatmg",
+	"weapon_gusenberg",
+	"weapon_tacticalrifle",
+	"weapon_specialcarbine_mk2"
+}
+
+local DeathmatchNoMissionPeds = false
+menu.toggle(GameModesMenu, "Deathmatch No Mission Peds", {}, "", function(Toggle)
+	DeathmatchNoMissionPeds = Toggle
+	if not DeathmatchNoMissionPeds then
+		for index, peds in pairs(entities.get_all_peds_as_handles()) do
+			if DECORATOR.DECOR_EXIST_ON(peds, "Casino_Game_Info_Decorator") then
+				RequestControlOfEntity(peds)
+				local NetID = NETWORK.PED_TO_NET(peds)
+				if NetID ~= 0 then
+					NETWORK.SET_NETWORK_ID_ALWAYS_EXISTS_FOR_PLAYER(NetID, PLAYER.PLAYER_ID(), false)
+				end
+				entities.delete_by_handle(peds)
+			end
+		end
+	end
+	if DeathmatchNoMissionPeds then
+		local AiTeam1Hash = joaat("rgFM_AiPed20000")
+		local Peds = {}
+		local HandlesT = {}
+		local Team1RelName = "Team1"
+		local Team2RelName = "Team2"
+		AddRelationshipGroup(Team1RelName)
+		AddRelationshipGroup(Team2RelName)
+		PED.SET_RELATIONSHIP_BETWEEN_GROUPS(1, joaat(Team1RelName), joaat(Team1RelName))
+		PED.SET_RELATIONSHIP_BETWEEN_GROUPS(1, joaat(Team2RelName), joaat(Team2RelName))
+		PED.SET_RELATIONSHIP_BETWEEN_GROUPS(5, joaat(Team1RelName), joaat(Team2RelName))
+		PED.SET_RELATIONSHIP_BETWEEN_GROUPS(5, joaat(Team2RelName), joaat(Team1RelName))
+		local TeamModels = { 
+			joaat("mp_m_bogdangoon"),
+			joaat("mp_m_avongoon")
+		}
+		local TeamsRels = {
+			joaat(Team1RelName),
+			joaat(Team2RelName)
+		}
+		local TeamToCreatePed = 0
+		while DeathmatchNoMissionPeds do
+			if #Peds < 20 then
+				if TeamToCreatePed == 0 then
+					TeamToCreatePed = math.random(1, 2)
+				end
+				if RequestModelFunc(TeamModels[TeamToCreatePed]) then
+					local RandomPoly = Polys1[math.random(#Polys1)].Center
+					local PedHandle = PED.CREATE_PED(28, TeamModels[TeamToCreatePed], RandomPoly.x, RandomPoly.y, RandomPoly.z, math.random(-180, 180), true, true)
+					if PedHandle ~= 0 then
+						if HandlesT[PedHandle] == nil then
+							Peds[#Peds+1] = {}
+							Peds[#Peds].Handle = PedHandle
+							Peds[#Peds].TaskState = 0
+							Peds[#Peds].Target = 0
+							Peds[#Peds].TaskCoords = {x = 0.0, y = 0.0, z = 0.0}
+							Peds[#Peds].TaskCoords2 = {x = 0.0, y = 0.0, z = 0.0}
+							Peds[#Peds].Paths = nil
+							Peds[#Peds].ActualPath = 1
+							Peds[#Peds].SearchState = 0
+							Peds[#Peds].SearchCalled = false
+							Peds[#Peds].Start = nil
+							Peds[#Peds].TargetPoly = nil
+							Peds[#Peds].InsideStartPolygon = false
+							Peds[#Peds].TargetInsideTargetPolygon = false
+							Peds[#Peds].HasSetRel = false
+							Peds[#Peds].TimeOut = 0
+							Peds[#Peds].SearchLowLevel = 3+16
+							Peds[#Peds].IsInVeh = false
+							Peds[#Peds].VehHandle = 0
+							Peds[#Peds].LastDistance = 0.0
+							Peds[#Peds].SameDistanceTick = 0
+							Peds[#Peds].StartPolysT = {}
+							Peds[#Peds].TargetPolysT = {}
+							Peds[#Peds].DrivingStyle = 0
+							Peds[#Peds].NetID = NetID
+							Peds[#Peds].IsZombie = false
+							Peds[#Peds].JumpDelay = 0
+							Peds[#Peds].StartIndexArg = nil
+							Peds[#Peds].TargetIndexArg = nil
+							Peds[#Peds].AddMode = false
+							Peds[#Peds].HasChecked = false
+							Peds[#Peds].LastPolyID = 0
+							Peds[#Peds].OldPaths = {}
+							PED.SET_PED_TARGET_LOSS_RESPONSE(PedHandle, 1)
+							PED.SET_COMBAT_FLOAT(PedHandle, 2, 4000.0)
+							PED.SET_PED_COMBAT_RANGE(PedHandle, 3)
+							PED.SET_PED_FIRING_PATTERN(PedHandle, joaat("FIRING_PATTERN_FULL_AUTO"))
+							PED.SET_PED_RELATIONSHIP_GROUP_HASH(PedHandle, TeamsRels[TeamToCreatePed])
+							WEAPON.GIVE_WEAPON_TO_PED(PedHandle, joaat(RiotWeapons[math.random(#RiotWeapons)]), 99999, false, true)
+							ENTITY.SET_ENTITY_AS_MISSION_ENTITY(PedHandle, false, true)
+							entities.set_can_migrate(PedHandle, false)
+							local Addr = entities.handle_to_pointer(PedHandle) + 0xD8
+							if Addr ~= 0 then
+								memory.write_int(Addr, 1)
+							end
+						end
+					end
+					STREAMING.SET_MODEL_AS_NO_LONGER_NEEDED(TeamModels[TeamToCreatePed])
+					TeamToCreatePed = 0
+				end
+			end
+			for k = 1, #Peds do
+				if Peds[k] ~= nil then
+					if not ENTITY.IS_ENTITY_DEAD(Peds[k].Handle) and ENTITY.DOES_ENTITY_EXIST(Peds[k].Handle) then
+						if RequestControlOfEntity(Peds[k].Handle) then
+							entities.set_can_migrate(Peds[k].Handle, false)
+						end
+						if Peds[k].JumpDelay <= 0 then
+							if HitClimbableObject(Peds[k].Handle) then
+								TASK.TASK_CLIMB(Peds[k].Handle, false)
+								Peds[k].JumpDelay = 1000
+							end
+							if JumpPassThroughHole(Peds[k].Handle) then
+								TASK.TASK_CLIMB(Peds[k].Handle, true)
+								Peds[k].JumpDelay = 1000
+							end
+						else
+							Peds[k].JumpDelay = Peds[k].JumpDelay - 1
+						end
+						if WEAPON.IS_PED_ARMED(Peds[k].Handle, 1) then
+							Peds[k].IsZombie = true
+							PED.SET_COMBAT_FLOAT(Peds[k].Handle, 7, 3.0)
+							PED.SET_PED_RESET_FLAG(Peds[k].Handle, 306, true)
+							PED.SET_PED_CONFIG_FLAG(Peds[k].Handle, 435, true)
+						end
+						if Peds[k].IsZombie then
+							--PED.SET_PED_MOVE_RATE_OVERRIDE(Peds[k].Handle, 1.5)
+							--PED.SET_AI_MELEE_WEAPON_DAMAGE_MODIFIER(100.0)
+							PED.SET_PED_USING_ACTION_MODE(Peds[k].Handle, false, -1, 0)
+							--PED.SET_PED_MIN_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+							--PED.SET_PED_MAX_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+						end
+						local Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
+						if not Peds[k].HasSetRel then
+							if PED.DOES_RELATIONSHIP_GROUP_EXIST(AiTeam1Hash) then
+								if RequestControlOfEntity(Peds[k].Handle) then
+									--PED.SET_PED_RELATIONSHIP_GROUP_HASH(Peds[k].Handle, AiTeam1Hash)
+									Peds[k].HasSetRel = true
+								end
+							end
+						end
+						if Peds[k].TaskState == 6 then
+							--TASK.TASK_COMBAT_HATED_TARGETS_AROUND_PED(Peds[k].Handle, 1000.0, 16)
+							local Target = PED.GET_PED_TARGET_FROM_COMBAT_PED(Peds[k].Handle, 0)
+							if Target ~= 0 then
+								Peds[k].Target = Target
+								Peds[k].TaskState = 1
+							end
+						end
+						if Peds[k].TaskState == 0 then
+							--TASK.TASK_COMBAT_HATED_TARGETS_AROUND_PED(Peds[k].Handle, 1000.0, 16)
+							local Target = PED.GET_PED_TARGET_FROM_COMBAT_PED(Peds[k].Handle, 0)
+							if Target ~= 0 then
+								Peds[k].Target = Target
+								Peds[k].TaskState = 1
+							end
+						end
+						if Peds[k].SearchState == 0 then
+							if Peds[k].Target ~= 0 then
+								local Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
+								local TargetPos = ENTITY.GET_ENTITY_COORDS(Peds[k].Target)
+								Peds[k].SearchState = 1
+								util.create_thread(function()
+									local NewPaths = nil
+									NewPaths, Peds[k].Start, Peds[k].TargetPoly, Peds[k].InsideStartPolygon, Peds[k].TargetInsideTargetPolygon, Nodes = AStarPathFind(Pos, TargetPos, Peds[k].SearchLowLevel, false, Peds[k].StartIndexArg, Peds[k].TargetIndexArg, false, false, nil, false, false)
+									if NewPaths ~= nil then
+										if Peds[k] ~= nil then
+											if not Peds[k].AddMode then
+												Peds[k].Paths = NewPaths
+											else
+												for i = 1, #NewPaths do
+													table.insert(Peds[k].Paths, NewPaths[i])
+												end
+											end
+											--Peds[k].SearchLowLevel = 1
+											--Print("Found path")
+											Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
+											if Nodes ~= nil then
+												Peds[k].ActualPath = AdjustTraveledPaths(Nodes, Polys1, Pos)--1
+											else
+												Peds[k].ActualPath = 1
+											end
+											--Print(Peds[k].ActualPath)
+											Peds[k].TaskState = 1
+											Peds[k].StartIndexArg = nil
+											Peds[k].TargetIndexArg = nil
+											Peds[k].AddMode = false
+										end
+										--PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+									end
+									
+									Wait(1000)
+									if Peds[k] ~= nil then
+										Peds[k].SearchState = 2
+										--Print("Reset")
+									end
+								end)
+							end
+						end
+						local Polygons = {}
+						if Peds[k].Target ~= 0 then
+							if Peds[k].Paths ~= nil then
+								local TargetPos = ENTITY.GET_ENTITY_COORDS(Peds[k].Target)
+								local DistanceFinal = DistanceBetween(TargetPos.x, TargetPos.y, TargetPos.z, Peds[k].Paths[#Peds[k].Paths].x, Peds[k].Paths[#Peds[k].Paths].y, Peds[k].Paths[#Peds[k].Paths].z)
+								if DistanceFinal > 30.0 then
+									if Peds[k].SearchState == 2 then
+										Peds[k].SearchState = 0
+										Peds[k].SearchLowLevel = 4+16
+									end
+								end
+							end
+						end
+						if Peds[k].TaskState == 1 then
+							if Peds[k].Paths ~= nil then
+								--if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_CLIMB")) == 7 then
+								if not Peds[k].IsZombie then
+									if RequestControlOfEntity(Peds[k].Handle) then
+										--PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+										--TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+										if Peds[k].ActualPath > #Peds[k].Paths then
+											Peds[k].ActualPath = 1
+											if Peds[k].SearchState == 2 then
+												Peds[k].SearchState = 0
+												Peds[k].SearchLowLevel = 3+16
+											end
+										end
+										if Peds[k].Paths[Peds[k].ActualPath] ~= nil then
+											local Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
+											local NewV3 = v3.new(Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
+											local Sub = v3.sub(NewV3, Pos)
+											local Rot = Sub:toRot()
+											--ENTITY.SET_ENTITY_HEADING(Peds[k].Handle, Rot.z, 2)
+											Dir = Rot:toDir()
+											Peds[k].TaskCoords.x = Peds[k].Paths[Peds[k].ActualPath].x
+											Peds[k].TaskCoords.y = Peds[k].Paths[Peds[k].ActualPath].y
+											Peds[k].TaskCoords.z = Peds[k].Paths[Peds[k].ActualPath].z
+											Peds[k].TaskCoords2.x = Peds[k].Paths[Peds[k].ActualPath].x + Dir.x * 2.0
+											Peds[k].TaskCoords2.y = Peds[k].Paths[Peds[k].ActualPath].y + Dir.y * 2.0
+											Peds[k].TaskCoords2.z = Peds[k].Paths[Peds[k].ActualPath].z + Dir.z * 2.0
+											
+											if ENTITY.HAS_ENTITY_CLEAR_LOS_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 17) then
+												TASK.TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY(Peds[k].Handle, Peds[k].TaskCoords2.x, Peds[k].TaskCoords2.y, Peds[k].TaskCoords2.z, Peds[k].Target, 2.0, true, 0.1, 0.1, false, 0, true, joaat("FIRING_PATTERN_FULL_AUTO"), -1)
+												PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+												if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY")) ~= 7 then
+													Peds[k].TaskState = 2
+												end
+											else
+												TASK.TASK_GO_STRAIGHT_TO_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 3.0, -1, 40000.0, 0.1)
+												PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+												if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_STRAIGHT_TO_COORD")) ~= 7 then
+													Peds[k].TaskState = 7
+													--Print("Straight")
+												end
+											end
+										end
+									end
+								else
+									if not ENTITY.IS_ENTITY_AT_ENTITY(Peds[k].Handle, Peds[k].Target, 5.5, 5.5, 2.5, false, true, 0) then
+										if RequestControlOfEntity(Peds[k].Handle) then
+											
+											--TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+											--PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+											if Peds[k].ActualPath > #Peds[k].Paths then
+												Peds[k].ActualPath = 1
+												if Peds[k].SearchState == 2 then
+													Peds[k].SearchState = 0
+													Peds[k].SearchLowLevel = 3+16
+												end
+											end
+											if Peds[k].Paths[Peds[k].ActualPath] ~= nil then
+												local Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
+												local NewV3 = v3.new(Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
+												local Sub = v3.sub(NewV3, Pos)
+												local Rot = Sub:toRot()
+												--ENTITY.SET_ENTITY_HEADING(Peds[k].Handle, Rot.z, 2)
+												Dir = Rot:toDir()
+												Peds[k].TaskCoords.x = Peds[k].Paths[Peds[k].ActualPath].x
+												Peds[k].TaskCoords.y = Peds[k].Paths[Peds[k].ActualPath].y
+												Peds[k].TaskCoords.z = Peds[k].Paths[Peds[k].ActualPath].z
+												Peds[k].TaskCoords2.x = Peds[k].Paths[Peds[k].ActualPath].x + Dir.x * 2.0
+												Peds[k].TaskCoords2.y = Peds[k].Paths[Peds[k].ActualPath].y + Dir.y * 2.0
+												Peds[k].TaskCoords2.z = Peds[k].Paths[Peds[k].ActualPath].z + Dir.z * 2.0
+												Peds[k].LastDistance = DistanceBetween(Pos.x, Pos.y, Pos.z, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
+												--TASK.TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, Peds[k].Target, 2.0, true, 0.1, 0.1, false, 0, true, joaat("FIRING_PATTERN_FULL_AUTO"), -1)
+												--TASK.TASK_SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+												TASK.TASK_GO_STRAIGHT_TO_COORD(Peds[k].Handle, Peds[k].TaskCoords2.x, Peds[k].TaskCoords2.y, Peds[k].TaskCoords2.z, 3.0, -1, 40000.0, 0.1)
+												PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+												if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_STRAIGHT_TO_COORD")) ~= 7 then
+													Peds[k].TaskState = 3
+													--Print("Straight")
+												end
+											end
+										end
+									else
+										local HasSetTask = false
+										local TargetPos = ENTITY.GET_ENTITY_COORDS(Peds[k].Target)
+										local Distance3 = DistanceBetween(Pos.x, Pos.y, Pos.z, TargetPos.x, TargetPos.y, TargetPos.z)
+										if Distance3 < 1.5 then
+											if RequestControlOfEntity(Peds[k].Handle) then
+												TASK.TASK_COMBAT_PED(Peds[k].Handle, Peds[k].Target, 201326592, 16)
+												PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+												if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_COMBAT")) ~= 7 then
+													--Print("Combat")
+													Peds[k].TaskState = 4
+												end
+												HasSetTask = true
+											end
+										end
+										if not HasSetTask then
+											--if Distance3 < 1.5 then
+												if ENTITY.HAS_ENTITY_CLEAR_LOS_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 17) then
+													if RequestControlOfEntity(Peds[k].Handle) then
+														TASK.TASK_GO_STRAIGHT_TO_COORD_RELATIVE_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 0.0, 0.0, 2.0, 3.0, -1)
+														PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+														if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_STRAIGHT_TO_COORD_RELATIVE_TO_ENTITY")) ~= 7 then
+															--Print("Combat")
+															Peds[k].TaskState = 6
+														end
+													end
+												else
+													if RequestControlOfEntity(Peds[k].Handle) then
+														if Peds[k].ActualPath > #Peds[k].Paths then
+															Peds[k].ActualPath = 1
+															if Peds[k].SearchState == 2 then
+																Peds[k].SearchState = 0
+																Peds[k].SearchLowLevel = 3+16
+															end
+														end
+														if Peds[k].Paths[Peds[k].ActualPath] ~= nil then
+															local Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
+															local NewV3 = v3.new(Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
+															local Sub = v3.sub(NewV3, Pos)
+															local Rot = Sub:toRot()
+															Dir = Rot:toDir()
+															Peds[k].TaskCoords.x = Peds[k].Paths[Peds[k].ActualPath].x
+															Peds[k].TaskCoords.y = Peds[k].Paths[Peds[k].ActualPath].y
+															Peds[k].TaskCoords.z = Peds[k].Paths[Peds[k].ActualPath].z
+															Peds[k].TaskCoords2.x = Peds[k].Paths[Peds[k].ActualPath].x + Dir.x * 1.0
+															Peds[k].TaskCoords2.y = Peds[k].Paths[Peds[k].ActualPath].y + Dir.y * 1.0
+															Peds[k].TaskCoords2.z = Peds[k].Paths[Peds[k].ActualPath].z + Dir.z * 1.0
+															Peds[k].LastDistance = DistanceBetween(Pos.x, Pos.y, Pos.z, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
+															--TASK.TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, Peds[k].Target, 2.0, true, 0.1, 0.1, false, 0, true, joaat("FIRING_PATTERN_FULL_AUTO"), -1)
+															--TASK.TASK_SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+															TASK.TASK_GO_STRAIGHT_TO_COORD(Peds[k].Handle, Peds[k].TaskCoords2.x, Peds[k].TaskCoords2.y, Peds[k].TaskCoords2.z, 3.0, -1, 40000.0, 0.1)
+															
+															PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+															if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_STRAIGHT_TO_COORD")) ~= 7 then
+																Peds[k].TaskState = 3
+																--Print("Straight")
+															end
+														end
+													end
+												end
+											--end
+										end
+									end
+								end
+							--end
+							else
+								if Peds[k].SearchState == 2 then
+									Peds[k].SearchState = 0
+									Peds[k].SearchLowLevel = 3+16
+								end
+							end
+						end
+						if Peds[k].TaskState == 2 then
+							if not ENTITY.IS_ENTITY_DEAD(Peds[k].Target) and ENTITY.DOES_ENTITY_EXIST(Peds[k].Target) then
+								if Peds[k].Paths ~= nil then
+									if Peds[k].SearchState == 2 then
+										if Peds[k].TargetPoly ~= nil then
+											local TargetPos = ENTITY.GET_ENTITY_COORDS(Peds[k].Target)
+											if Peds[k].TargetInsideTargetPolygon then
+												if not InsidePolygon(Polys1[Peds[k].TargetPoly], TargetPos) then
+													--Peds[k].TaskState = 1
+													if Peds[k].SearchState == 2 then
+														Peds[k].SearchState = 0
+														
+													end
+												end
+											end
+										else
+											--Peds[k].SearchState = 0
+										end
+									end
+									--if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 0.15, 0.15, 100.0, false, false, 0) then
+									--	if Peds[k].SearchState == 2 then
+									--		Peds[k].SearchState = 0
+									--	end
+									--end
+									if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 0.5, 0.5, 1.0, false, false, 0) then
+										if RequestControlOfEntity(Peds[k].Handle) then
+											PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+											--TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+											Peds[k].ActualPath = Peds[k].ActualPath + 1
+											if Peds[k].ActualPath > #Peds[k].Paths then
+												Peds[k].ActualPath = 1
+												if Peds[k].SearchState == 2 then
+													Peds[k].SearchState = 0
+													Peds[k].SearchLowLevel = 3+16
+												end
+											end
+											Peds[k].TaskState = 1
+										end
+									else
+										Peds[k].TimeOut = Peds[k].TimeOut + 1
+										if Peds[k].TimeOut > 10000 then
+											if Peds[k].SearchState == 2 then
+												if RequestControlOfEntity(Peds[k].Handle) then
+													PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+													TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+													Peds[k].SearchState = 0
+													Peds[k].TaskState = 1
+												end
+											end
+										end
+									end
+									if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_TO_COORD_WHILE_AIMING_AT_ENTITY")) == 7 then
+										Peds[k].TaskState = 1
+										--Print("No action")
+									end
+								else
+									if Peds[k].SearchState == 2 then
+										Peds[k].SearchState = 0
+										Peds[k].SearchLowLevel = 3+16
+									end
+								end
+							else
+								if RequestControlOfEntity(Peds[k].Handle) then
+									PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+									TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+									Peds[k].TaskState = 0
+									Peds[k].Target = 0
+									Peds[k].ActualPath = 1
+									Peds[k].SearchLowLevel = 3+16
+								end
+							end
+						end
+						GRAPHICS.DRAW_LINE(Pos.x, Pos.y, Pos.z,
+						Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 255, 255, 255, 255)
+						if Peds[k].Paths ~= nil then
+							for i = Peds[k].ActualPath, #Peds[k].Paths-1 do
+								GRAPHICS.DRAW_LINE(Peds[k].Paths[i].x, Peds[k].Paths[i].y, Peds[k].Paths[i].z,
+								Peds[k].Paths[i+1].x, Peds[k].Paths[i+1].y, Peds[k].Paths[i+1].z, 255, 255, 255, 255)
+							end
+						end
+						if Peds[k].TaskState == 3 then
+							if not ENTITY.IS_ENTITY_DEAD(Peds[k].Target) and ENTITY.DOES_ENTITY_EXIST(Peds[k].Target) then
+								local Distance2 = DistanceBetween(Pos.x, Pos.y, Pos.z, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
+								Peds[k].SameDistanceTick = Peds[k].SameDistanceTick + 1
+								local HasSet = false
+								if Distance2 < Peds[k].LastDistance then
+									Peds[k].LastDistance = Distance2
+									Peds[k].SameDistanceTick = 0
+								else
+									if Peds[k].ActualPath < #Peds[k].Paths then
+										if Peds[k].ActualPath == 1 then
+											Peds[k].ActualPath = Peds[k].ActualPath + 1
+											Peds[k].TaskState = 1
+										end
+										if Peds[k].SearchState == 2 then
+											Peds[k].SearchState = 0
+										end
+									end
+								end
+								--Distance2 > Peds[k].LastDistance then
+								if Peds[k].SameDistanceTick > 50 or math.floor(Distance2) > math.floor(Peds[k].LastDistance) then
+									--Peds[k].TaskState = 1
+									--Peds[k].ActualPath = Peds[k].ActualPath + 1
+									--if Peds[k].ActualPath > #Peds[k].Paths then
+									--	Peds[k].ActualPath = 1
+									--	if Peds[k].SearchState == 2 then
+									--		Peds[k].SearchState = 0
+									--	end
+									--end
+									if Peds[k].SearchState == 2 then
+										Peds[k].SearchState = 0
+										Peds[k].SearchLowLevel = 3+16
+									end
+								end
+								if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_STRAIGHT_TO_COORD")) == 7 then
+									if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_CLIMB")) == 7 then
+										if RequestControlOfEntity(Peds[k].Handle) then
+											Peds[k].TaskState = 1
+											TASK.TASK_GO_STRAIGHT_TO_COORD(Peds[k].Handle, Peds[k].TaskCoords2.x, Peds[k].TaskCoords2.y, Peds[k].TaskCoords2.z, 3.0, -1, 40000.0, 0.1)
+										end
+									end
+								end
+								if not HasSet then
+									if ENTITY.IS_ENTITY_AT_ENTITY(Peds[k].Handle, Peds[k].Target, 5.0, 5.0, 2.5, false, true, 0) then
+										if RequestControlOfEntity(Peds[k].Handle) then
+											--PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+											--TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+											Peds[k].TaskState = 1
+											--HasSet = true
+											Peds[k].SameDistanceTick = 0
+										end
+									end
+								end
+								local R = 1.0
+								local CurSpd = ENTITY.GET_ENTITY_SPEED(Peds[k].Handle)
+								--R = R + CurSpd / 2
+								--Print(R)
+								if not HasSet then
+									if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, R, R, 2.0, false, false, 0) or
+									ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords2.x, Peds[k].TaskCoords2.y, Peds[k].TaskCoords2.z, R, R, 2.0, false, false, 0) then
+										Peds[k].ActualPath = Peds[k].ActualPath + 1
+										if Peds[k].ActualPath > #Peds[k].Paths then
+											Peds[k].ActualPath = 1
+											if Peds[k].SearchState == 2 then
+												Peds[k].SearchState = 0
+												Peds[k].SearchLowLevel = 3+16
+											end
+										end
+										Peds[k].TaskState = 1
+										Peds[k].SameDistanceTick = 0
+									end
+								end
+							else
+								Peds[k].TaskState = 0
+								Peds[k].Target = 0
+							end
+						end
+						if Peds[k].TaskState == 4 then
+							if not ENTITY.IS_ENTITY_DEAD(Peds[k].Target) and ENTITY.DOES_ENTITY_EXIST(Peds[k].Target) then
+								if not ENTITY.IS_ENTITY_AT_ENTITY(Peds[k].Handle, Peds[k].Target, 2.5, 2.5, 2.5, false, true, 0) then
+									if RequestControlOfEntity(Peds[k].Handle) then
+										PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+										TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+										Peds[k].TaskState = 1
+										
+									end
+								end
+							else
+								if RequestControlOfEntity(Peds[k].Handle) then
+									PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+									TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+									Peds[k].TaskState = 0
+									Peds[k].Target = 0
+								end
+							end
+						end
+						if Peds[k].TaskState == 5 then
+							if not PED.IS_PED_CLIMBING(Peds[k].Handle) and not PED.IS_PED_JUMPING(Peds[k].Handle) then
+								Peds[k].JumpDelay = Peds[k].JumpDelay - 1
+								if Peds[k].JumpDelay <= 0 then
+								--if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_CLIMB")) == 7 then
+									Peds[k].ActualPath = Peds[k].ActualPath + 1
+									if Peds[k].ActualPath > #Peds[k].Paths then
+										Peds[k].ActualPath = 1
+										if Peds[k].SearchState == 2 then
+											Peds[k].SearchState = 0
+											Peds[k].SearchLowLevel = 3+16
+										end
+									end
+									Peds[k].TaskState = 1
+									Peds[k].SameDistanceTick = 0
+								end
+							end
+						end
+						if Peds[k].TaskState == 6 then
+							if not ENTITY.IS_ENTITY_DEAD(Peds[k].Target) and ENTITY.DOES_ENTITY_EXIST(Peds[k].Target) then
+								if ENTITY.IS_ENTITY_AT_ENTITY(Peds[k].Handle, Peds[k].Target, 1.0, 1.0, 2.5, false, true, 0) then--or not CanIntersectEntity(Pos, ENTITY.GET_ENTITY_COORDS(Peds[k].Target, Peds[k].Paths, Peds[k].ActualPath)) then
+									if RequestControlOfEntity(Peds[k].Handle) then
+										PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+										TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+										Peds[k].TaskState = 1
+										if Peds[k].SearchState == 2 then
+											Peds[k].SearchState = 0
+											Peds[k].SearchLowLevel = 3+16
+										end
+									end
+								end
+							else
+								if RequestControlOfEntity(Peds[k].Handle) then
+									PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+									TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+									Peds[k].TaskState = 0
+									Peds[k].Target = 0
+								end
+							end
+						end
+						if Peds[k].TaskState == 7 then
+							if not ENTITY.IS_ENTITY_DEAD(Peds[k].Target) and ENTITY.DOES_ENTITY_EXIST(Peds[k].Target) then
+								if Peds[k].Paths ~= nil then
+									if Peds[k].SearchState == 2 then
+										if Peds[k].TargetPoly ~= nil then
+											local TargetPos = ENTITY.GET_ENTITY_COORDS(Peds[k].Target)
+											if Peds[k].TargetInsideTargetPolygon then
+												if not InsidePolygon(Polys1[Peds[k].TargetPoly], TargetPos) then
+													--Peds[k].TaskState = 1
+													if Peds[k].SearchState == 2 then
+														Peds[k].SearchState = 0
+													end
+												end
+											end
+										else
+											Peds[k].SearchState = 0
+										end
+									end
+									--if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 0.15, 0.15, 100.0, false, false, 0) then
+									--	if Peds[k].SearchState == 2 then
+									--		Peds[k].SearchState = 0
+									--	end
+									--end
+									if ENTITY.HAS_ENTITY_CLEAR_LOS_TO_ENTITY(Peds[k].Handle, Peds[k].Target, 17) then
+										Peds[k].TaskState = 1
+									end
+									if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 0.5, 0.5, 1.0, false, false, 0) then
+										if RequestControlOfEntity(Peds[k].Handle) then
+											PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+											--TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+											Peds[k].ActualPath = Peds[k].ActualPath + 1
+											if Peds[k].ActualPath > #Peds[k].Paths then
+												Peds[k].ActualPath = 1
+												Peds[k].SearchState = 0
+												Peds[k].SearchLowLevel = 3+16
+											end
+											Peds[k].TaskState = 1
+										end
+									else
+										Peds[k].TimeOut = Peds[k].TimeOut + 1
+										if Peds[k].TimeOut > 10000 then
+											if Peds[k].SearchState == 2 then
+												if RequestControlOfEntity(Peds[k].Handle) then
+													PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+													TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+													Peds[k].SearchState = 0
+													Peds[k].TaskState = 1
+												end
+											end
+										end
+									end
+									if TASK.GET_SCRIPT_TASK_STATUS(Peds[k].Handle, joaat("SCRIPT_TASK_GO_STRAIGHT_TO_COORD")) == 7 then
+										Peds[k].TaskState = 1
+										--Print("No action")
+									end
+								else
+									if Peds[k].SearchState == 2 then
+										Peds[k].SearchState = 0
+										Peds[k].SearchLowLevel = 3+16
+									end
+								end
+							else
+								if RequestControlOfEntity(Peds[k].Handle) then
+									PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+									TASK.CLEAR_PED_TASKS(Peds[k].Handle)
+									Peds[k].TaskState = 0
+									Peds[k].Target = 0
+									Peds[k].ActualPath = 1
+									Peds[k].SearchLowLevel = 3+16
+								end
+							end
+						end
+					else
+						if ENTITY.DOES_ENTITY_EXIST(Peds[k].Handle) then
+							if RequestControlOfEntity(Peds[k].Handle) then
+								local Addr = entities.handle_to_pointer(Peds[k].Handle) + 0xD8
+								if Addr ~= 0 then
+									memory.write_int(Addr, 329858)
+								end
+								--set_entity_as_no_longer_needed(Peds[k].Handle)
+								HandlesT[Peds[k].Handle] = nil
+								table.remove(Peds, k)
+							end
+						else
+							HandlesT[Peds[k].Handle] = nil
+							table.remove(Peds, k)
+						end
+					end
+				end
+			end
+			Wait()
+		end
+		for i = 1, #Peds do
+			if ENTITY.DOES_ENTITY_EXIST(Peds[i].Handle) then
+				entities.delete_by_handle(Peds[i].Handle)
+			end
+		end
+	end
+end)
+
+function AddRelationshipGroup(RelName)
+	if not PED.DOES_RELATIONSHIP_GROUP_EXIST(joaat(RelName)) then
+		local ptr = memory.alloc(32)
+		PED.ADD_RELATIONSHIP_GROUP(RelName, ptr)
+	end
+end
+
+function RequestModelFunc(Model)
+	STREAMING.REQUEST_MODEL(Model)
+	return STREAMING.HAS_MODEL_LOADED(Model)
+end
