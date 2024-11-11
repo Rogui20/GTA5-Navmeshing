@@ -207,7 +207,7 @@ function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations)
 			--	Wait()
 			--end
 		end
-		local UseNewNeighborCalc = 1
+		local UseNewNeighborCalc = 3
 		if UseNewNeighborCalc == 0 then
 			ItMax = 150000
 			local It2 = 0
@@ -277,6 +277,8 @@ function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations)
 			for k = 1, #vizinhosPorPoligono do
 				T[k].Neighboors = vizinhosPorPoligono[k]
 			end
+		elseif UseNewNeighborCalc == 3 then
+			NeighborsCalc2()
 		end
 	end
 	Grid = {}
@@ -2141,10 +2143,10 @@ menu.toggle(GameModesMenu, "Deathmatch", {}, "", function(Toggle)
 						end
 						if Peds[k].IsZombie then
 							--PED.SET_PED_MOVE_RATE_OVERRIDE(Peds[k].Handle, 1.5)
-							--PED.SET_AI_MELEE_WEAPON_DAMAGE_MODIFIER(100.0)
+							PED.SET_AI_MELEE_WEAPON_DAMAGE_MODIFIER(100.0)
 							PED.SET_PED_USING_ACTION_MODE(Peds[k].Handle, false, -1, 0)
-							--PED.SET_PED_MIN_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
-							--PED.SET_PED_MAX_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+							PED.SET_PED_MIN_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+							PED.SET_PED_MAX_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
 						end
 						--local LastEnt = ENTITY._GET_LAST_ENTITY_HIT_BY_ENTITY(Peds[k].Handle)
 						--if LastEnt ~= 0 then
@@ -9271,89 +9273,90 @@ menu.action(NavmeshGeneratorMenu, "Generate Navmesh V2", {}, "", function(Toggle
 					local RayPos2 = {x = OutCoord2.x, y = OutCoord2.y, z = OutCoord2.z - DeepScan}
 					local RayPos3 = {x = OutCoord3.x, y = OutCoord3.y, z = OutCoord3.z - DeepScan}
 					local RayPos4 = {x = OutCoord4.x, y = OutCoord4.y, z = OutCoord4.z - DeepScan}
-					local Hit, _OutCoord = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord, RayPos1, GlobalRaycastFlags)
-					local Hit2, _OutCoord2 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord2, RayPos2, GlobalRaycastFlags)
-					local Hit3, _OutCoord3 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord3, RayPos3, GlobalRaycastFlags)
-					local Hit4, _OutCoord4 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord4, RayPos4, GlobalRaycastFlags)
-
-					_OutCoord.z = _OutCoord.z + 1.0
-					_OutCoord2.z = _OutCoord2.z + 1.0
-					_OutCoord3.z = _OutCoord3.z + 1.0
-					_OutCoord4.z = _OutCoord4.z + 1.0
-					local IsValid = true
-					local NewPoly = {_OutCoord, _OutCoord2, _OutCoord3, _OutCoord4}
-					for k = 1, #NewPoly do
-						for j = 1, #NewPoly do
-							if k ~= j then
-								if ShapeTestNav(PLAYER.PLAYER_PED_ID(), NewPoly[k], NewPoly[i], GlobalRaycastFlags) then
-									IsValid = false
-									break
+					local _Hit, _OutCoord = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord, RayPos1, GlobalRaycastFlags)
+					local _Hit2, _OutCoord2 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord2, RayPos2, GlobalRaycastFlags)
+					local _Hit3, _OutCoord3 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord3, RayPos3, GlobalRaycastFlags)
+					local _Hit4, _OutCoord4 = ShapeTestNav(PLAYER.PLAYER_PED_ID(), OutCoord4, RayPos4, GlobalRaycastFlags)
+					if _Hit and _Hit2 and _Hit3 and _Hit4 then
+						_OutCoord.z = _OutCoord.z + 1.0
+						_OutCoord2.z = _OutCoord2.z + 1.0
+						_OutCoord3.z = _OutCoord3.z + 1.0
+						_OutCoord4.z = _OutCoord4.z + 1.0
+						local IsValid = true
+						local NewPoly = {_OutCoord, _OutCoord2, _OutCoord3, _OutCoord4}
+						for k = 1, #NewPoly do
+							for j = 1, #NewPoly do
+								if k ~= j then
+									if ShapeTestNav(PLAYER.PLAYER_PED_ID(), NewPoly[k], NewPoly[i], GlobalRaycastFlags) then
+										IsValid = false
+										break
+									end
 								end
 							end
 						end
-					end
-					if IsValid then
-						local PassingThrougWalls = not verificarPoligonoAtravessandoParedes(NewPoly, WallCollisionCheck)
-						and verificarVariacaoAltura(NewPoly[1], NewPoly[2], NewPoly[3], NewPoly[4]) <= MaxHeight
-						and PoligonoColidindoComTeto(NewPoly) and not PoligonoInclinado(NewPoly, MaxAngle)
-						and not PoligonoDesalinhado(NewPoly, MaxAlign)
-						if not PassingThrougWalls then
-							Polys1[#Polys1+1] = {_OutCoord, _OutCoord2, _OutCoord3, _OutCoord4, ID = #Polys1+1, Neighboors = {}}
-							Polys1[#Polys1].Center = GetPolygonCenter(Polys1[#Polys1])
-							local Key = string.format("%." ..NumOfNumber.."f", _OutCoord.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.z)
-							local Key2 = string.format("%." ..NumOfNumber.."f", _OutCoord2.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.z)
-							local Key3 = string.format("%." ..NumOfNumber.."f", _OutCoord3.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.z)
-							local Key4 = string.format("%." ..NumOfNumber.."f", _OutCoord4.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.z)
-							
-							NeighborsToCalc[Key] = NeighborsToCalc[Key] or {}
-							NeighborsToCalc[Key2] = NeighborsToCalc[Key2] or {}
-							NeighborsToCalc[Key3] = NeighborsToCalc[Key3] or {}
-							NeighborsToCalc[Key4] = NeighborsToCalc[Key4] or {}
-							NeighborsToCalc[Key][#NeighborsToCalc[Key]+1] = Polys1[#Polys1].ID
-							NeighborsToCalc[Key2][#NeighborsToCalc[Key2]+1] = Polys1[#Polys1].ID
-							NeighborsToCalc[Key3][#NeighborsToCalc[Key3]+1] = Polys1[#Polys1].ID
-							NeighborsToCalc[Key4][#NeighborsToCalc[Key4]+1] = Polys1[#Polys1].ID
-							
-							for k = 1, #NeighborsToCalc[Key] do
-								IDsAdded[NeighborsToCalc[Key][k]] = IDsAdded[NeighborsToCalc[Key][k]] or {}
-								for i = 1, #NeighborsToCalc[Key] do
-									if NeighborsToCalc[Key][k] ~= NeighborsToCalc[Key][i] then
-										if IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] == nil then
-											Polys1[NeighborsToCalc[Key][k]].Neighboors[#Polys1[NeighborsToCalc[Key][k]].Neighboors+1] = NeighborsToCalc[Key][i]
-											IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] = 0
+						if IsValid then
+							local PassingThrougWalls = not verificarPoligonoAtravessandoParedes(NewPoly, WallCollisionCheck)
+							and verificarVariacaoAltura(NewPoly[1], NewPoly[2], NewPoly[3], NewPoly[4]) <= MaxHeight
+							and PoligonoColidindoComTeto(NewPoly) and not PoligonoInclinado(NewPoly, MaxAngle)
+							and not PoligonoDesalinhado(NewPoly, MaxAlign)
+							if not PassingThrougWalls then
+								Polys1[#Polys1+1] = {_OutCoord, _OutCoord2, _OutCoord3, _OutCoord4, ID = #Polys1+1, Neighboors = {}}
+								Polys1[#Polys1].Center = GetPolygonCenter(Polys1[#Polys1])
+								local Key = string.format("%." ..NumOfNumber.."f", _OutCoord.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.z)
+								local Key2 = string.format("%." ..NumOfNumber.."f", _OutCoord2.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.z)
+								local Key3 = string.format("%." ..NumOfNumber.."f", _OutCoord3.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.z)
+								local Key4 = string.format("%." ..NumOfNumber.."f", _OutCoord4.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.z)
+								
+								NeighborsToCalc[Key] = NeighborsToCalc[Key] or {}
+								NeighborsToCalc[Key2] = NeighborsToCalc[Key2] or {}
+								NeighborsToCalc[Key3] = NeighborsToCalc[Key3] or {}
+								NeighborsToCalc[Key4] = NeighborsToCalc[Key4] or {}
+								NeighborsToCalc[Key][#NeighborsToCalc[Key]+1] = Polys1[#Polys1].ID
+								NeighborsToCalc[Key2][#NeighborsToCalc[Key2]+1] = Polys1[#Polys1].ID
+								NeighborsToCalc[Key3][#NeighborsToCalc[Key3]+1] = Polys1[#Polys1].ID
+								NeighborsToCalc[Key4][#NeighborsToCalc[Key4]+1] = Polys1[#Polys1].ID
+								
+								for k = 1, #NeighborsToCalc[Key] do
+									IDsAdded[NeighborsToCalc[Key][k]] = IDsAdded[NeighborsToCalc[Key][k]] or {}
+									for i = 1, #NeighborsToCalc[Key] do
+										if NeighborsToCalc[Key][k] ~= NeighborsToCalc[Key][i] then
+											if IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] == nil then
+												Polys1[NeighborsToCalc[Key][k]].Neighboors[#Polys1[NeighborsToCalc[Key][k]].Neighboors+1] = NeighborsToCalc[Key][i]
+												IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] = 0
+											end
 										end
 									end
 								end
-							end
-							for k = 1, #NeighborsToCalc[Key2] do
-								IDsAdded[NeighborsToCalc[Key2][k]] = IDsAdded[NeighborsToCalc[Key2][k]] or {}
-								for i = 1, #NeighborsToCalc[Key2] do
-									if NeighborsToCalc[Key2][k] ~= NeighborsToCalc[Key2][i] then
-										if IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] == nil then
-											Polys1[NeighborsToCalc[Key2][k]].Neighboors[#Polys1[NeighborsToCalc[Key2][k]].Neighboors+1] = NeighborsToCalc[Key2][i]
-											IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] = 0
+								for k = 1, #NeighborsToCalc[Key2] do
+									IDsAdded[NeighborsToCalc[Key2][k]] = IDsAdded[NeighborsToCalc[Key2][k]] or {}
+									for i = 1, #NeighborsToCalc[Key2] do
+										if NeighborsToCalc[Key2][k] ~= NeighborsToCalc[Key2][i] then
+											if IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] == nil then
+												Polys1[NeighborsToCalc[Key2][k]].Neighboors[#Polys1[NeighborsToCalc[Key2][k]].Neighboors+1] = NeighborsToCalc[Key2][i]
+												IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] = 0
+											end
 										end
 									end
 								end
-							end
-							for k = 1, #NeighborsToCalc[Key3] do
-								IDsAdded[NeighborsToCalc[Key3][k]] = IDsAdded[NeighborsToCalc[Key3][k]] or {}
-								for i = 1, #NeighborsToCalc[Key3] do
-									if NeighborsToCalc[Key3][k] ~= NeighborsToCalc[Key3][i] then
-										if IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] == nil then
-											Polys1[NeighborsToCalc[Key3][k]].Neighboors[#Polys1[NeighborsToCalc[Key3][k]].Neighboors+1] = NeighborsToCalc[Key3][i]
-											IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] = 0
+								for k = 1, #NeighborsToCalc[Key3] do
+									IDsAdded[NeighborsToCalc[Key3][k]] = IDsAdded[NeighborsToCalc[Key3][k]] or {}
+									for i = 1, #NeighborsToCalc[Key3] do
+										if NeighborsToCalc[Key3][k] ~= NeighborsToCalc[Key3][i] then
+											if IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] == nil then
+												Polys1[NeighborsToCalc[Key3][k]].Neighboors[#Polys1[NeighborsToCalc[Key3][k]].Neighboors+1] = NeighborsToCalc[Key3][i]
+												IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] = 0
+											end
 										end
 									end
 								end
-							end
-							for k = 1, #NeighborsToCalc[Key4] do
-								IDsAdded[NeighborsToCalc[Key4][k]] = IDsAdded[NeighborsToCalc[Key4][k]] or {}
-								for i = 1, #NeighborsToCalc[Key4] do
-									if NeighborsToCalc[Key4][k] ~= NeighborsToCalc[Key4][i] then
-										if IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] == nil then
-											Polys1[NeighborsToCalc[Key4][k]].Neighboors[#Polys1[NeighborsToCalc[Key4][k]].Neighboors+1] = NeighborsToCalc[Key4][i]
-											IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] = 0
+								for k = 1, #NeighborsToCalc[Key4] do
+									IDsAdded[NeighborsToCalc[Key4][k]] = IDsAdded[NeighborsToCalc[Key4][k]] or {}
+									for i = 1, #NeighborsToCalc[Key4] do
+										if NeighborsToCalc[Key4][k] ~= NeighborsToCalc[Key4][i] then
+											if IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] == nil then
+												Polys1[NeighborsToCalc[Key4][k]].Neighboors[#Polys1[NeighborsToCalc[Key4][k]].Neighboors+1] = NeighborsToCalc[Key4][i]
+												IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] = 0
+											end
 										end
 									end
 								end
@@ -11001,4 +11004,74 @@ end
 function RequestModelFunc(Model)
 	STREAMING.REQUEST_MODEL(Model)
 	return STREAMING.HAS_MODEL_LOADED(Model)
+end
+
+function NeighborsCalc2()
+	local NeighborsToCalc = {}
+	local IDsAdded = {}
+	local NumOfNumber = 2
+	for j = 1, #Polys1 do
+		local _OutCoord, _OutCoord2, _OutCoord3, _OutCoord4 = Polys1[j][1] , Polys1[j][2], Polys1[j][3], Polys1[j][4] 
+		Polys1[j].Neighboors = {}
+		Polys1[j].ID = j
+		Polys1[j].Center = GetPolygonCenter(Polys1[j])
+		local Key = string.format("%." ..NumOfNumber.."f", _OutCoord.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.z)
+		local Key2 = string.format("%." ..NumOfNumber.."f", _OutCoord2.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord2.z)
+		local Key3 = string.format("%." ..NumOfNumber.."f", _OutCoord3.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord3.z)
+		local Key4 = string.format("%." ..NumOfNumber.."f", _OutCoord4.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord4.z)
+		
+		NeighborsToCalc[Key] = NeighborsToCalc[Key] or {}
+		NeighborsToCalc[Key2] = NeighborsToCalc[Key2] or {}
+		NeighborsToCalc[Key3] = NeighborsToCalc[Key3] or {}
+		NeighborsToCalc[Key4] = NeighborsToCalc[Key4] or {}
+		NeighborsToCalc[Key][#NeighborsToCalc[Key]+1] = Polys1[#Polys1].ID
+		NeighborsToCalc[Key2][#NeighborsToCalc[Key2]+1] = Polys1[#Polys1].ID
+		NeighborsToCalc[Key3][#NeighborsToCalc[Key3]+1] = Polys1[#Polys1].ID
+		NeighborsToCalc[Key4][#NeighborsToCalc[Key4]+1] = Polys1[#Polys1].ID
+		
+		for k = 1, #NeighborsToCalc[Key] do
+			IDsAdded[NeighborsToCalc[Key][k]] = IDsAdded[NeighborsToCalc[Key][k]] or {}
+			for i = 1, #NeighborsToCalc[Key] do
+				if NeighborsToCalc[Key][k] ~= NeighborsToCalc[Key][i] then
+					if IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] == nil then
+						Polys1[NeighborsToCalc[Key][k]].Neighboors[#Polys1[NeighborsToCalc[Key][k]].Neighboors+1] = NeighborsToCalc[Key][i]
+						IDsAdded[NeighborsToCalc[Key][k]][NeighborsToCalc[Key][i]] = 0
+					end
+				end
+			end
+		end
+		for k = 1, #NeighborsToCalc[Key2] do
+			IDsAdded[NeighborsToCalc[Key2][k]] = IDsAdded[NeighborsToCalc[Key2][k]] or {}
+			for i = 1, #NeighborsToCalc[Key2] do
+				if NeighborsToCalc[Key2][k] ~= NeighborsToCalc[Key2][i] then
+					if IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] == nil then
+						Polys1[NeighborsToCalc[Key2][k]].Neighboors[#Polys1[NeighborsToCalc[Key2][k]].Neighboors+1] = NeighborsToCalc[Key2][i]
+						IDsAdded[NeighborsToCalc[Key2][k]][NeighborsToCalc[Key2][i]] = 0
+					end
+				end
+			end
+		end
+		for k = 1, #NeighborsToCalc[Key3] do
+			IDsAdded[NeighborsToCalc[Key3][k]] = IDsAdded[NeighborsToCalc[Key3][k]] or {}
+			for i = 1, #NeighborsToCalc[Key3] do
+				if NeighborsToCalc[Key3][k] ~= NeighborsToCalc[Key3][i] then
+					if IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] == nil then
+						Polys1[NeighborsToCalc[Key3][k]].Neighboors[#Polys1[NeighborsToCalc[Key3][k]].Neighboors+1] = NeighborsToCalc[Key3][i]
+						IDsAdded[NeighborsToCalc[Key3][k]][NeighborsToCalc[Key3][i]] = 0
+					end
+				end
+			end
+		end
+		for k = 1, #NeighborsToCalc[Key4] do
+			IDsAdded[NeighborsToCalc[Key4][k]] = IDsAdded[NeighborsToCalc[Key4][k]] or {}
+			for i = 1, #NeighborsToCalc[Key4] do
+				if NeighborsToCalc[Key4][k] ~= NeighborsToCalc[Key4][i] then
+					if IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] == nil then
+						Polys1[NeighborsToCalc[Key4][k]].Neighboors[#Polys1[NeighborsToCalc[Key4][k]].Neighboors+1] = NeighborsToCalc[Key4][i]
+						IDsAdded[NeighborsToCalc[Key4][k]][NeighborsToCalc[Key4][i]] = 0
+					end
+				end
+			end
+		end
+	end
 end
