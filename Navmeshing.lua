@@ -16,6 +16,9 @@ local FlagBitNames = {
 	JumpTo = 3
 }
 
+local CachedPaths = {}
+local CachedPathsT = {}
+
 local FlagsBits = 0
 
 local GridStartType = 0
@@ -89,11 +92,14 @@ function LoadNavmesh(File, TableTarget, LoadAll)
 			T[#T].JumpedFrom = Contents[k].JumpedFrom or nil
 			if LoadAll then
 				T[#T].Neighboors = Contents[k].Neighboors
+				if T[#T].Neighboors == nil then
+					T[#T].Neighboors = {}
+				end
 				T[#T].Center = Contents[k].Center
 				T[#T].ID = #T
 				if T[#T].LinkedIDs ~= nil then
-					for k = 1, #T[#T].LinkedIDs do
-						T[#T].Neighboors[#T[#T].Neighboors+1] = T[#T].LinkedIDs[k]
+					for i = 1, #T[#T].LinkedIDs do
+						T[#T].Neighboors[#T[#T].Neighboors+1] = T[#T].LinkedIDs[i]
 					end
 				end
 			end
@@ -107,12 +113,18 @@ function LoadNavmesh(File, TableTarget, LoadAll)
 		end
 		Print("Loaded. Total Polygons is "..#T)
 
-		SetAllPolysNeighboors(nil, T, LoadAll)
+		SetAllPolysNeighboors(nil, T, LoadAll, LoadAll)
 	end
 	return IDs
 end
 util.create_thread(function()
 	PlatformIDs = LoadNavmesh("LastNav.json", nil, true)
+	local Cache = LoadJSONFile(filesystem.scripts_dir().."\\navs\\Cache.json")
+	if Cache then
+		for k = 1, #Cache do
+			CachedPaths[Cache[k].Key] = Cache[k].Paths
+		end
+	end
 end)
 
 function GetPolygonCenter(polygon)
@@ -120,7 +132,7 @@ function GetPolygonCenter(polygon)
     return Center
 end
 
-function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations)
+function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations, IgnoreNeighborCalculations)
 	local T = Polys1
 	if TableTarget ~= nil then
 		T = TableTarget
@@ -133,6 +145,7 @@ function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations)
 		Start = EditIndex
 		End = EditIndex
 	end
+	local IgnoreNeighborsCalc = IgnoreNeighborCalculations or false
 	local UsePointCalc = false
 	if not IgnoreCalculations then
 		for i = Start, End do
@@ -207,6 +220,8 @@ function SetAllPolysNeighboors(EditIndex, TableTarget, IgnoreCalculations)
 			--	Wait()
 			--end
 		end
+	end
+	if not IgnoreNeighborsCalc then
 		local UseNewNeighborCalc = 3
 		if UseNewNeighborCalc == 0 then
 			ItMax = 150000
@@ -1159,14 +1174,8 @@ menu.action(AddPolysMenu, "Add Poly Grid", {}, "", function(Toggle)
 					Polys1[#Polys1+1] = {
 						{x = NewLinesT[i][kIt][1].x, y = NewLinesT[i][kIt][1].y, z = NewLinesT[i][kIt][1].z},
 						{x = NewLinesT[i][kIt+1][1].x, y = NewLinesT[i][kIt+1][1].y, z = NewLinesT[i][kIt+1][1].z},
-						{x = NewLinesT[i][kIt+2][1].x, y = NewLinesT[i][kIt+2][1].y, z = NewLinesT[i][kIt+2][1].z}
-					}
-					Polys1[#Polys1].Center = GetPolygonCenter(Polys1[#Polys1])
-					SetPolyEdges(#Polys1)
-					Polys1[#Polys1+1] = {
-						{x = NewLinesT[i][kIt+3][1].x, y = NewLinesT[i][kIt+3][1].y, z = NewLinesT[i][kIt+3][1].z},
-						{x = NewLinesT[i][kIt+4][1].x, y = NewLinesT[i][kIt+4][1].y, z = NewLinesT[i][kIt+4][1].z},
-						{x = NewLinesT[i][kIt+2][1].x, y = NewLinesT[i][kIt+2][1].y, z = NewLinesT[i][kIt+2][1].z}
+						{x = NewLinesT[i][kIt+2][1].x, y = NewLinesT[i][kIt+2][1].y, z = NewLinesT[i][kIt+2][1].z},
+						{x = NewLinesT[i][kIt+3][1].x, y = NewLinesT[i][kIt+3][1].y, z = NewLinesT[i][kIt+3][1].z}
 					}
 					Polys1[#Polys1].Center = GetPolygonCenter(Polys1[#Polys1])
 					SetPolyEdges(#Polys1)
@@ -1178,7 +1187,7 @@ menu.action(AddPolysMenu, "Add Poly Grid", {}, "", function(Toggle)
 		--SetAllPolysNeighboors()
 	end
 	if AddState6 == 2 then
-		Wait()
+		Wait(1000)
 		AddState6 = 0
 	end
 end)
@@ -1270,17 +1279,12 @@ menu.action(AddPolysMenu, "Add Poly Grid Raycast Manual", {}, "Use NUMPAD to mov
 					Polys1[#Polys1+1] = {
 						{x = NewLinesT[i][kIt][1].x, y = NewLinesT[i][kIt][1].y, z = NewLinesT[i][kIt][1].z},
 						{x = NewLinesT[i][kIt+1][1].x, y = NewLinesT[i][kIt+1][1].y, z = NewLinesT[i][kIt+1][1].z},
-						{x = NewLinesT[i][kIt+2][1].x, y = NewLinesT[i][kIt+2][1].y, z = NewLinesT[i][kIt+2][1].z}
+						{x = NewLinesT[i][kIt+2][1].x, y = NewLinesT[i][kIt+2][1].y, z = NewLinesT[i][kIt+2][1].z},
+						{x = NewLinesT[i][kIt+3][1].x, y = NewLinesT[i][kIt+3][1].y, z = NewLinesT[i][kIt+3][1].z}
 					}
 					Polys1[#Polys1].Center = GetPolygonCenter(Polys1[#Polys1])
 					SetPolyEdges(#Polys1)
-					Polys1[#Polys1+1] = {
-						{x = NewLinesT[i][kIt+3][1].x, y = NewLinesT[i][kIt+3][1].y, z = NewLinesT[i][kIt+3][1].z},
-						{x = NewLinesT[i][kIt+4][1].x, y = NewLinesT[i][kIt+4][1].y, z = NewLinesT[i][kIt+4][1].z},
-						{x = NewLinesT[i][kIt+2][1].x, y = NewLinesT[i][kIt+2][1].y, z = NewLinesT[i][kIt+2][1].z}
-					}
-					Polys1[#Polys1].Center = GetPolygonCenter(Polys1[#Polys1])
-					SetPolyEdges(#Polys1)
+					
 					kIt = kIt + 5
 				end
 			end
@@ -1288,7 +1292,7 @@ menu.action(AddPolysMenu, "Add Poly Grid Raycast Manual", {}, "Use NUMPAD to mov
 		--SetAllPolysNeighboors()
 	end
 	if AddState7 == 2 then
-		Wait(10)
+		Wait(1000)
 		AddState7 = 0
 	end
 end)
@@ -1497,7 +1501,7 @@ menu.action(AddPolysMenu, "Delete All Poly Points", {}, "", function(Toggle)
 end)
 
 menu.action(AddPolysMenu, "Calculate All Polygon Neighbors", {}, "", function(Toggle)
-	SetAllPolysNeighboors()
+	SetAllPolysNeighboors(nil, nil, true, false)
 end)
 
 local PolygonLoadOrSaveMenu = menu.list(NavmeshingMenu, "Save Load Polygons", {}, "")
@@ -1529,7 +1533,7 @@ menu.action(PolygonLoadOrSaveMenu, "Load Vehicle Polys", {}, "", function(Toggle
 end)
 
 local TestMenu = menu.list(NavmeshingMenu, "Test Navigation", {}, "")
-local StartPath = {x = -979.44439697266, y = 166.95582580566, z = 373.1741027832}
+local StartPath = {x = -2085.2438964844, y = 2921.2351074219, z = 33.39680480957}
 
 local NavNetID = 0
 local NavHandle = 0
@@ -1849,7 +1853,7 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 		if NavNetID ~= 0 then
 			NETWORK.SET_NETWORK_ID_CAN_MIGRATE(NavNetID2, false)
 		end
-		local ModelName = "bati"
+		local ModelName = "schafter5"
 		STREAMING.REQUEST_MODEL(joaat(ModelName))
 		while not STREAMING.HAS_MODEL_LOADED(joaat(ModelName)) do
 			Wait()
@@ -1871,6 +1875,24 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 		local LastDistance = 0.0
 		local MinDist = 1.5
 		local DistState = 1
+		local Timer = 0
+		local SpdMul = 15.0
+		VEHICLE.MODIFY_VEHICLE_TOP_SPEED(CarHandle2, SpdMul)
+		VEHICLE.SET_VEHICLE_BRAKE(CarHandle2, SpdMul)
+		VEHICLE.SET_VEHICLE_MOD_KIT(CarHandle2, 0)
+		--PHYSICS.SET_USE_KINEMATIC_PHYSICS(Veh, true)
+		--entities.set_upgrade_value(Veh, 0, entities.get_upgrade_max_value(Veh, 0), true)
+		entities.set_upgrade_value(CarHandle2, 11, entities.get_upgrade_max_value(CarHandle2, 11), true)
+		entities.set_upgrade_value(CarHandle2, 12, entities.get_upgrade_max_value(CarHandle2, 12), true)
+		entities.set_upgrade_value(CarHandle2, 13, entities.get_upgrade_max_value(CarHandle2, 13), true)
+		entities.set_upgrade_value(CarHandle2, 15, entities.get_upgrade_max_value(CarHandle2, 15), true)
+		entities.set_upgrade_value(CarHandle2, 16, entities.get_upgrade_max_value(CarHandle2, 16), true)
+		entities.set_upgrade_value(CarHandle2, 17, entities.get_upgrade_max_value(CarHandle2, 17), true)
+		entities.set_upgrade_value(CarHandle2, 18, entities.get_upgrade_max_value(CarHandle2, 18), true)
+		entities.set_upgrade_value(CarHandle2, 21, entities.get_upgrade_max_value(CarHandle2, 21), true)
+		entities.set_upgrade_value(CarHandle2, 22, entities.get_upgrade_max_value(CarHandle2, 22), true)
+		--entities.set_upgrade_value(Veh, 23, entities.get_upgrade_max_value(Veh, 23), true)
+		entities.set_upgrade_value(CarHandle2, 24, entities.get_upgrade_max_value(CarHandle2, 24), true)
 		while PedNav2 do
 			local Pos = ENTITY.GET_ENTITY_COORDS(NavHandle2)
 			local PlayerPos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
@@ -1913,15 +1935,40 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 					TaskCoords = FoundPaths[PathIndex]
 					if not ENTITY.IS_ENTITY_AT_COORD(NavHandle2, TaskCoords.x, TaskCoords.y, TaskCoords.z, 1.0, 1.0, 1.0, false, true, 0) then
 						if RequestControlOfEntity(NavHandle2) then
-							TASK.TASK_VEHICLE_DRIVE_TO_COORD(NavHandle2, CarHandle2, TaskCoords.x, TaskCoords.y, TaskCoords.z, 5.0, 1, joaat(ModelName), 16777216, 0.01, 40000.0)
-							TaskStatus = 1
 							LastDistance = DistanceBetween(Pos.x, Pos.y, Pos.z, TaskCoords.x, TaskCoords.y, TaskCoords.z)
+							TASK.TASK_VEHICLE_DRIVE_TO_COORD(NavHandle2, CarHandle2, TaskCoords.x, TaskCoords.y, TaskCoords.z, 500.0 * 2, 1, joaat(ModelName), 16777216, 0.01, 40000.0)
+							TaskStatus = 1
+							--local LookAt = v3.lookAt(ENTITY.GET_ENTITY_COORDS(CarHandle2), v3.new(TaskCoords.x, TaskCoords.y, TaskCoords.z))
+							--local CurRot = ENTITY.GET_ENTITY_ROTATION(CarHandle2, 2)
+							--ENTITY.SET_ENTITY_ROTATION(CarHandle2, CurRot.x, CurRot.y, LookAt.z, 2)
+							--local CurSpeed = ENTITY.GET_ENTITY_SPEED(CarHandle2)
+							--local CurVel = ENTITY.GET_ENTITY_VELOCITY(CarHandle2)
+							--local FVect = ENTITY.GET_ENTITY_FORWARD_VECTOR(CarHandle2)
+							--ENTITY.SET_ENTITY_VELOCITY(CarHandle2, FVect.x * CurSpeed, FVect.y * CurSpeed, CurVel.z)
+							--VEHICLE.SET_VEHICLE_FORWARD_SPEED(CarHandle2, ENTITY.GET_ENTITY_SPEED(CarHandle2))
 						end
 					else
 						TaskStatus = 1
 					end
 				end
+				if not ENTITY.IS_ENTITY_IN_AIR(CarHandle2) then
+					local LookAt = v3.lookAt(ENTITY.GET_ENTITY_COORDS(CarHandle2), v3.new(TaskCoords.x, TaskCoords.y, TaskCoords.z))
+					local NewRot = convertRotationXYZtoZYX(LookAt.x, LookAt.y, LookAt.z)
+					local CurRot = ENTITY.GET_ENTITY_ROTATION(CarHandle2, 5)
+					RotateEntityToTargetRotation(CarHandle2, {x = CurRot.x, y = CurRot.y, z = LookAt.z}, 5.0, false)
+					local CurSpeed = ENTITY.GET_ENTITY_SPEED(CarHandle2)
+					if CurSpeed < 30.0 then
+						local CurVel = ENTITY.GET_ENTITY_VELOCITY(CarHandle2)
+						local FVect = ENTITY.GET_ENTITY_FORWARD_VECTOR(CarHandle2)
+						FVect:mul(0.1)
+						ENTITY.SET_ENTITY_VELOCITY(CarHandle2, CurVel.x + FVect.x, CurVel.y + FVect.y, CurVel.z + FVect.z)
+						
+					end
+					local CurSpeedV = ENTITY.GET_ENTITY_SPEED_VECTOR(CarHandle2, true)
+					ENTITY.APPLY_FORCE_TO_ENTITY_CENTER_OF_MASS(CarHandle2, 1, -CurSpeedV.x * 0.5, 0.0, 0.0, 0, true, true, true)
+				end
 				if TaskStatus == 1 then
+					
 					local Distance2 = DistanceBetween(Pos.x, Pos.y, Pos.z, TaskCoords.x, TaskCoords.y, TaskCoords.z)
 					if DistState == 0 then
 						if math.floor(Distance2) > math.floor(LastDistance) then
@@ -1932,12 +1979,19 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 					if DistState == 1 then
 						if math.floor(Distance2) < math.floor(LastDistance) then
 							LastDistance = Distance2
+							Timer = 0
+						else
+							
+							Timer = Timer + 1
 						end
-						if math.floor(Distance2) > math.floor(LastDistance) then
+						if math.floor(Distance2) > math.floor(LastDistance) and Timer >= 100 then
 							TaskStatus = 0
 							PathIndex = 1
 							FoundIndex = 1
-							Print("Called")
+							--Print("Called")
+							--Timer = 0
+							--TaskStatus = 0
+							--PathIndex = PathIndex + 1
 						end
 					end
 					if ENTITY.IS_ENTITY_AT_COORD(NavHandle2, TaskCoords.x, TaskCoords.y, TaskCoords.z, MinDist, MinDist, MinDist, false, true, 0) then
@@ -1947,6 +2001,10 @@ menu.toggle(TestMenu, "Create Ped In Car For Nav", {}, "", function(Toggle)
 							FoundIndex = 0
 							PathIndex = 1
 						end
+					end
+					if PathIndex > #FoundPaths then
+						FoundIndex = 0
+						PathIndex = 1
 					end
 				end
 				GRAPHICS.DRAW_LINE(Pos.x, Pos.y, Pos.z,
@@ -2824,7 +2882,7 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 							--if PED.GET_PED_RELATIONSHIP_GROUP_HASH(Peds[k].Handle) == AiTeam1Hash then
 								ENTITY.SET_ENTITY_CAN_BE_DAMAGED_BY_RELATIONSHIP_GROUP(Peds[k].Handle, false, AiTeam1Hash)
 								ENTITY.SET_ENTITY_CAN_BE_DAMAGED_BY_RELATIONSHIP_GROUP(Peds[k].Handle, false, Team1Hash)
-								--ENTITY.SET_ENTITY_PROOFS(Peds[k].Handle, true, true, true, false, true, true, true, true)
+								ENTITY.SET_ENTITY_PROOFS(Peds[k].Handle, true, true, true, false, true, true, true, true)
 								ENTITY.SET_ENTITY_PROOFS(Peds[k].Handle, true, true, true, false, false, false, true, false)
 								PED.SET_PED_COMBAT_ATTRIBUTES(Peds[k].Handle, 3, false)
 								PED.SET_PED_TARGET_LOSS_RESPONSE(Peds[k].Handle, 1)
@@ -2832,7 +2890,7 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 								PED.SET_COMBAT_FLOAT(Peds[k].Handle, 2, 4000.0)
 								PED.SET_PED_COMBAT_RANGE(Peds[k].Handle, 3)
 								PED.SET_PED_FIRING_PATTERN(Peds[k].Handle, joaat("FIRING_PATTERN_FULL_AUTO"))
-								
+								PED.SET_PED_COMBAT_MOVEMENT(Peds[k].Handle, 0)
 								--ENTITY.SET_ENTITY_MAX_HEALTH(Peds[k].Handle, 1100)
 								--PED.SET_PED_MAX_HEALTH(Peds[k].Handle, 1100)
 								--ENTITY.SET_ENTITY_HEALTH(Peds[k].Handle, 1100)
@@ -2866,13 +2924,20 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 								end
 							end
 							if Peds[k].Target ~= 0 then
-								PED.SET_PED_MIN_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
-								PED.SET_PED_MAX_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+								PED.SET_PED_COMBAT_ATTRIBUTES(Peds[k].Handle, 72, false)
+								--PED.SET_PED_MIN_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+								--PED.SET_PED_MAX_MOVE_BLEND_RATIO(Peds[k].Handle, 3.0)
+								--TASK.TASK_SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, false)
+							else
+								--TASK.TASK_SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
+							end
+							if Peds[k].SearchState == 1 then
+								ENTITY.SET_ENTITY_VELOCITY(Peds[k].Handle, 0.0, 0.0, 0.0)
 							end
 							if Peds[k].SearchState == 0 then
 								if Peds[k].Target ~= 0 then
 									--172.71616, -846.8681, 1005.89124
-									if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, 172.71616, -846.8681, 1005.89124, 100.0, 100.0, 10.0, false, false, 0) then
+									--if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, 172.71616, -846.8681, 1005.89124, 100.0, 100.0, 10.0, false, false, 0) then
 										local Pos = ENTITY.GET_ENTITY_COORDS(Peds[k].Handle)
 										local TargetPos = ENTITY.GET_ENTITY_COORDS(Peds[k].Target)
 										local Distance = DistanceBetween(Pos.x, Pos.y, Pos.z, TargetPos.x, TargetPos.y, TargetPos.z)
@@ -2912,7 +2977,7 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 												--Print("Reset")
 											end
 										end)
-									end
+									--end
 								end
 							end
 							if Peds[k].SearchState == 3 then
@@ -2988,9 +3053,9 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 											end
 										end
 										if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 0.15, 0.15, 100.0, false, false, 0) then
-											if Peds[k].SearchState == 2 then
-												Peds[k].SearchState = 0
-											end
+											--if Peds[k].SearchState == 2 then
+												--Peds[k].SearchState = 0
+											--end
 										end
 										if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 0.5, 0.5, 1.0, false, true, 0) then
 											if RequestControlOfEntity(Peds[k].Handle) then
@@ -3042,6 +3107,42 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 							if Peds[k].VehHandle ~= 0 then
 								if RequestControlOfEntity(Peds[k].VehHandle) then
 									entities.set_can_migrate(Peds[k].VehHandle, false)
+									VEHICLE.MODIFY_VEHICLE_TOP_SPEED(Peds[k].VehHandle, 15.0)
+									VEHICLE.SET_VEHICLE_BRAKE(Peds[k].VehHandle, 15.0)
+									VEHICLE.SET_VEHICLE_MOD_KIT(Peds[k].VehHandle, 0)
+									--PHYSICS.SET_USE_KINEMATIC_PHYSICS(Veh, true)
+									--entities.set_upgrade_value(Veh, 0, entities.get_upgrade_max_value(Veh, 0), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 11, entities.get_upgrade_max_value(Peds[k].VehHandle, 11), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 12, entities.get_upgrade_max_value(Peds[k].VehHandle, 12), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 13, entities.get_upgrade_max_value(Peds[k].VehHandle, 13), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 15, entities.get_upgrade_max_value(Peds[k].VehHandle, 15), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 16, entities.get_upgrade_max_value(Peds[k].VehHandle, 16), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 17, entities.get_upgrade_max_value(Peds[k].VehHandle, 17), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 18, entities.get_upgrade_max_value(Peds[k].VehHandle, 18), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 21, entities.get_upgrade_max_value(Peds[k].VehHandle, 21), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 22, entities.get_upgrade_max_value(Peds[k].VehHandle, 22), true)
+									--entities.set_upgrade_value(Veh, 23, entities.get_upgrade_max_value(Veh, 23), true)
+									entities.set_upgrade_value(Peds[k].VehHandle, 24, entities.get_upgrade_max_value(Peds[k].VehHandle, 24), true)
+								end
+								PED.SET_PED_COMBAT_ATTRIBUTES(Peds[k].Handle, 3, false)
+								if not ENTITY.IS_ENTITY_IN_AIR(Peds[k].VehHandle) then
+									if Peds[k].TaskCoords.x ~= 0.0 or Peds[k].TaskCoords.y ~= 0.0 or Peds[k].TaskCoords.z ~= 0.0 then
+										local LookAt = v3.lookAt(ENTITY.GET_ENTITY_COORDS(Peds[k].VehHandle), v3.new(Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z))
+										local NewRot = convertRotationXYZtoZYX(LookAt.x, LookAt.y, LookAt.z)
+										local CurRot = ENTITY.GET_ENTITY_ROTATION(Peds[k].VehHandle, 5)
+										RotateEntityToTargetRotation(Peds[k].VehHandle, {x = CurRot.x, y = CurRot.y, z = LookAt.z}, 5.0, false)
+										
+									end
+									local CurSpeed = ENTITY.GET_ENTITY_SPEED(Peds[k].VehHandle)
+										if CurSpeed < 30.0 then
+											local CurVel = ENTITY.GET_ENTITY_VELOCITY(Peds[k].VehHandle)
+											local FVect = ENTITY.GET_ENTITY_FORWARD_VECTOR(CarHandle2)
+											FVect:mul(0.5)
+											ENTITY.SET_ENTITY_VELOCITY(Peds[k].VehHandle, CurVel.x + FVect.x, CurVel.y + FVect.y, CurVel.z + FVect.z)
+											
+										end
+									local CurSpeedV = ENTITY.GET_ENTITY_SPEED_VECTOR(Peds[k].VehHandle, true)
+									ENTITY.APPLY_FORCE_TO_ENTITY_CENTER_OF_MASS(Peds[k].VehHandle, 1, -CurSpeedV.x * 1.0, math.abs(CurSpeedV.x) * 0.05, 0.0, 0, true, true, true)
 								end
 								local Rot = ENTITY.GET_ENTITY_ROTATION(Peds[k].VehHandle, 2)
 								--VEHICLE.SET_DISABLE_VEHICLE_ENGINE_FIRES(Peds[k].VehHandle, true)
@@ -3064,8 +3165,8 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 									end
 								end
 								if Peds[k].TaskState == 0 then
-									--TASK.TASK_COMBAT_HATED_TARGETS_AROUND_PED(Peds[k].Handle, 1000.0, 16)
-									TASK.TASK_COMBAT_HATED_TARGETS_IN_AREA(Peds[k].Handle, 172.53906, -847.31964, 1005.8912, 1000.0, 16)
+									TASK.TASK_COMBAT_HATED_TARGETS_AROUND_PED(Peds[k].Handle, 1000.0, 16)
+									--TASK.TASK_COMBAT_HATED_TARGETS_IN_AREA(Peds[k].Handle, 172.53906, -847.31964, 1005.8912, 1000.0, 16)
 									Peds[k].TaskState = 6
 								end
 								if Peds[k].SearchState == 0 then
@@ -3117,20 +3218,20 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 										Peds[k].TaskCoords.y = Peds[k].Paths[Peds[k].ActualPath].y
 										Peds[k].TaskCoords.z = Peds[k].Paths[Peds[k].ActualPath].z
 										--Print("Called Go")
-										if not ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 1.0, 1.0, 1.0, false, true, 0) then
+										if not ENTITY.IS_ENTITY_AT_COORD(Peds[k].VehHandle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 1.0, 1.0, 1.0, false, true, 0) then
 											if RequestControlOfEntity(Peds[k].Handle) then
 												local Offset = ENTITY.GET_OFFSET_FROM_ENTITY_GIVEN_WORLD_COORDS(Peds[k].VehHandle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z)
 												local Bits = 16777216
 												if Peds[k].LastYOffset == 0 then
 													if Offset.y < MinOffset then
-														Bits = 16777216 + 1024
+														Bits = 16777216-- + 1024
 														Peds[k].LastYOffset = 1
 													else
 														Peds[k].LastYOffset = 2
 													end
 												end
 												if Peds[k].LastYOffset == 3 then
-													Bits = 16777216 + 1024
+													Bits = 16777216-- + 1024
 												end
 												TASK.TASK_VEHICLE_DRIVE_TO_COORD(Peds[k].Handle, Peds[k].VehHandle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 350.0, 0, ENTITY.GET_ENTITY_MODEL(Peds[k].VehHandle), Bits, 0.0, 40000.0)
 												PED.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS(Peds[k].Handle, true)
@@ -3247,7 +3348,7 @@ menu.toggle(GameModesMenu, "RPG VS Insurgents", {}, "", function(Toggle)
 									--	local Vel = ENTITY.GET_ENTITY_VELOCITY(Peds[k].VehHandle)
 									--	ENTITY.SET_ENTITY_VELOCITY(Peds[k].VehHandle, Vel.x - FVect.x * 5.0, Vel.y - FVect.y * 5.0, Vel.z)
 									--end
-									if ENTITY.IS_ENTITY_AT_COORD(Peds[k].Handle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 5.5, 5.5, 5.5, false, false, 0) then
+									if ENTITY.IS_ENTITY_AT_COORD(Peds[k].VehHandle, Peds[k].TaskCoords.x, Peds[k].TaskCoords.y, Peds[k].TaskCoords.z, 5.5, 5.5, 5.5, false, false, 0) then
 										Peds[k].TaskState = 1
 										Peds[k].ActualPath = Peds[k].ActualPath + 1
 										Peds[k].DrivingStyle = 1
@@ -3533,6 +3634,18 @@ function CopyPolygonsData(PolygonsT)
 end
 
 function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPolygons, CachedTargetIndex, IncludePoints, IncludeStartNode, IncludePoints2, Funnel, PreferCenter, Flags)
+	local NumOfNumber = 1
+	local Key1 = string.format("%." ..NumOfNumber.."f", Start.x) .. " "..string.format("%." ..NumOfNumber.."f", Start.y) .. " "..string.format("%." ..NumOfNumber.."f", Start.z)
+	local Key2 = string.format("%." ..NumOfNumber.."f", Target.x) .. " "..string.format("%." ..NumOfNumber.."f", Target.y) .. " "..string.format("%." ..NumOfNumber.."f", Target.z)
+	local Key3 = ""
+	if PolygonsOnly ~= nil then
+		FinalNode = PolygonsOnly
+		Key3 = "Center"
+	end
+	local Key = Key1 .. " " .. Key2 .. " " .. Key3
+	if CachedPaths[Key] ~= nil then
+		return CachedPaths[Key]
+	end
 	local StartIndex = 0
 	local TargetIndex = 0
 	local FinalNode = true
@@ -3554,9 +3667,6 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPoly
 	if IncludeStartNode ~= nil then
 		StartNode = IncludeStartNode
 	end
-	if PolygonsOnly ~= nil then
-		FinalNode = PolygonsOnly
-	end
 	if IncludePoints2 ~= nil then
 		IncludePointsNodes = IncludePoints2
 	end
@@ -3572,13 +3682,13 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPoly
 		--consultarGridComOrigem(Grid, Start.x, Start.y, Start.z, Polys1Center.x, Polys1Center.y, Polys1Center.z, 5.0)
 		--
 		if StartIndex == nil then
-			StartIndex = encontrarPoligonoDoPonto(Start, PolysT, 2.0)
+			StartIndex = encontrarPoligonoDoPonto(Start, PolysT, 10.0)
 			if StartIndex == nil then
 				StartIndex = GetClosestPolygon(PolysT, Start, Include, LowPriorityLevel, Bits)
 			end
 		else
 			local PolysIt = GetPolygonsFromGrid(StartIndex)
-			StartIndex = encontrarPoligonoDoPonto(Start, PolysIt, 2.0)
+			StartIndex = encontrarPoligonoDoPonto(Start, PolysIt, 10.0)
 			if StartIndex == nil then
 				StartIndex = GetClosestPolygon(PolysIt, Start, Include, LowPriorityLevel, Bits)
 				--Print("StartIndex Is Nil "..StartIndex)
@@ -3596,13 +3706,13 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPoly
 		--consultarGridComOrigem(Grid, Target.x, Target.y, Target.z, Polys1Center.x, Polys1Center.y, Polys1Center.z, 5.0)
 		--
 		if TargetIndex == nil then
-			TargetIndex = encontrarPoligonoDoPonto(Target, PolysT, 1.0)
+			TargetIndex = encontrarPoligonoDoPonto(Target, PolysT, 10.0)
 			if TargetIndex == nil then
 				TargetIndex = GetClosestPolygon(PolysT, Target, Include, LowPriorityLevel, Bits)
 			end
 		else
 			local PolysIt = GetPolygonsFromGrid(TargetIndex)
-			TargetIndex = encontrarPoligonoDoPonto(Target, PolysIt, 1.0)
+			TargetIndex = encontrarPoligonoDoPonto(Target, PolysIt, 10.0)
 			if TargetIndex == nil then
 				TargetIndex = GetClosestPolygon(PolysIt, Target, Include, LowPriorityLevel, Bits)
 			end
@@ -3669,6 +3779,14 @@ function AStarPathFind(Start, Target, LowPriorityLevel, PolygonsOnly, CustomPoly
 	end
 	--table.remove(Nodes, 1)
 	local NewPaths = smoothPath(Nodes2, PolysT, Nodes)
+	if CachedPaths[Key] == nil then
+		CachedPaths[Key] = NewPaths
+		local PathsSave = {}
+		for k = 1, #NewPaths do
+			PathsSave[#PathsSave+1] = {x = NewPaths[k].x, y = NewPaths[k].y, z = NewPaths[k].z}
+		end
+		CachedPathsT[#CachedPathsT+1] = {Key = Key, Paths = PathsSave}
+	end
 	return NewPaths, StartIndex, TargetIndex, InsideStartPolygon, TargetInsideTargetPolygon, Nodes
 end
 
@@ -6015,7 +6133,7 @@ function a_star(start_index, goal_index, polygons)
             end
         end
 		LoopCount = LoopCount + 1
-		if LoopCount > 10 then
+		if LoopCount > 0 then
 			LoopCount = 0
 			Wait()
 		end
@@ -11012,7 +11130,9 @@ function NeighborsCalc2()
 	local NumOfNumber = 2
 	for j = 1, #Polys1 do
 		local _OutCoord, _OutCoord2, _OutCoord3, _OutCoord4 = Polys1[j][1] , Polys1[j][2], Polys1[j][3], Polys1[j][4] 
-		Polys1[j].Neighboors = {}
+		if Polys1[j].Neighboors == nil then
+			Polys1[j].Neighboors = {}
+		end
 		Polys1[j].ID = j
 		Polys1[j].Center = GetPolygonCenter(Polys1[j])
 		local Key = string.format("%." ..NumOfNumber.."f", _OutCoord.x) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.y) .. " "..string.format("%." ..NumOfNumber.."f", _OutCoord.z)
@@ -11024,10 +11144,10 @@ function NeighborsCalc2()
 		NeighborsToCalc[Key2] = NeighborsToCalc[Key2] or {}
 		NeighborsToCalc[Key3] = NeighborsToCalc[Key3] or {}
 		NeighborsToCalc[Key4] = NeighborsToCalc[Key4] or {}
-		NeighborsToCalc[Key][#NeighborsToCalc[Key]+1] = Polys1[#Polys1].ID
-		NeighborsToCalc[Key2][#NeighborsToCalc[Key2]+1] = Polys1[#Polys1].ID
-		NeighborsToCalc[Key3][#NeighborsToCalc[Key3]+1] = Polys1[#Polys1].ID
-		NeighborsToCalc[Key4][#NeighborsToCalc[Key4]+1] = Polys1[#Polys1].ID
+		NeighborsToCalc[Key][#NeighborsToCalc[Key]+1] = Polys1[j].ID
+		NeighborsToCalc[Key2][#NeighborsToCalc[Key2]+1] = Polys1[j].ID
+		NeighborsToCalc[Key3][#NeighborsToCalc[Key3]+1] = Polys1[j].ID
+		NeighborsToCalc[Key4][#NeighborsToCalc[Key4]+1] = Polys1[j].ID
 		
 		for k = 1, #NeighborsToCalc[Key] do
 			IDsAdded[NeighborsToCalc[Key][k]] = IDsAdded[NeighborsToCalc[Key][k]] or {}
@@ -11075,3 +11195,13 @@ function NeighborsCalc2()
 		end
 	end
 end
+
+util.on_stop(function()
+	local Cache = LoadJSONFile(filesystem.scripts_dir().."\\navs\\Cache.json")
+	if Cache then
+		for k = 1, #Cache do
+			CachedPathsT[#CachedPathsT+1] = {Key = Cache[k].Key, Paths = Cache[k].Paths}
+		end
+	end
+	SaveJSONFile(filesystem.scripts_dir().."\\navs\\Cache.json", CachedPathsT)
+end)
